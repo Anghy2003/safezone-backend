@@ -1,0 +1,39 @@
+spring.application.name=SafeZone
+
+# Database
+spring.datasource.url=${DATABASE_URL}
+spring.datasource.username=${DATABASE_USERNAME}
+spring.datasource.password=${DATABASE_PASSWORD}
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# JPA
+spring.jpa.hibernate.ddl-auto=none
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+spring.jpa.properties.hibernate.jdbc.lob.non_contextual_creation=true
+
+spring.datasource.hikari.maximum-pool-size=4
+spring.datasource.hikari.minimum-idle=1
+spring.datasource.hikari.idle-timeout=30000
+spring.datasource.hikari.max-lifetime=600000
+spring.datasource.hikari.connection-timeout=30000
+
+# Twilio
+twilio.account-sid=${TWILIO_ACCOUNT_SID}
+twilio.auth-token=${TWILIO_AUTH_TOKEN}
+twilio.phone-number=${TWILIO_PHONE_NUMBER}
+
+# xAI
+xai.api-key=${XAI_API_KEY}
+xai.base-url=https://api.x.ai
+xai.model=grok-2-vision-1212
+xai.image-detail=low
+xai.max-output-tokens=350
+
+server.port=8080
+server.error.include-message=always
+
+logging.level.org.springframework=INFO
+logging.level.org.hibernate.SQL=DEBUG
+logging.level.com.ista.springboot.web.app=DEBUG

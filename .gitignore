@@ -1,0 +1,27 @@
+# SECRETS / CREDENTIALS (ACORDADO)
+
+# Firebase Admin SDK (Service Account JSON)
+src/main/resources/firebase/*.json
+src/main/resources/*firebase*.json
+src/main/resources/*.json
+
+# Carpetas de secretos locales
+secrets/
+**/secrets/
+
+# Variables de entorno
+.env
+.env.*
+*.env
+
+# Properties/YAML con claves (NO subir)
+src/main/resources/application.properties
+src/main/resources/application-local.properties
+src/main/resources/application-dev.properties
+src/main/resources/application-prod.properties
+src/main/resources/application-local.yml
+src/main/resources/application-dev.yml
+src/main/resources/application-prod.yml
+
+# Archivo de ejemplo SÍ se sube
+!src/main/resources/application.properties.example
