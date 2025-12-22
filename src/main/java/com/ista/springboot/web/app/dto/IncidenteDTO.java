@@ -2,17 +2,12 @@ package com.ista.springboot.web.app.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-/**
- * DTO para recibir incidentes desde el frontend (Flutter).
- * Usado en POST /api/incidentes
- *
- * Soporta 2 formatos:
- * 1) usuarioId / comunidadId
- * 2) usuario: { id } / comunidad: { id }
- */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class IncidenteDTO {
 
+    // ======================
+    // CAMPOS BÁSICOS
+    // ======================
     private String tipo;
     private String descripcion;
 
@@ -25,70 +20,192 @@ public class IncidenteDTO {
 
     private String nivelPrioridad;
 
-    // ✅ Formato simple
     private Long usuarioId;
     private Long comunidadId;
 
-    // ✅ Formato anidado (para compatibilidad con tu Flutter actual)
     private UsuarioRef usuario;
     private ComunidadRef comunidad;
 
-    // =====================
-    // Constructor vacío
-    // =====================
+    // ======================
+    // CAMPOS IA
+    // ======================
+    private String aiCategoria;
+    private String aiPrioridad;
+    private Double aiConfianza;
+    private Boolean aiPosibleFalso;
+    private String aiMotivos;
+    private String aiRiesgos;
+    private String aiAccionRecomendada;
+
     public IncidenteDTO() {}
 
-    // =====================
-    // Getters y Setters
-    // =====================
+    // ======================
+    // GETTERS & SETTERS
+    // ======================
 
-    public String getTipo() { return tipo; }
-    public void setTipo(String tipo) { this.tipo = tipo; }
+    public String getTipo() {
+        return tipo;
+    }
 
-    public String getDescripcion() { return descripcion; }
-    public void setDescripcion(String descripcion) { this.descripcion = descripcion; }
+    public void setTipo(String tipo) {
+        this.tipo = tipo;
+    }
 
-    public Double getLat() { return lat; }
-    public void setLat(Double lat) { this.lat = lat; }
+    public String getDescripcion() {
+        return descripcion;
+    }
 
-    public Double getLng() { return lng; }
-    public void setLng(Double lng) { this.lng = lng; }
+    public void setDescripcion(String descripcion) {
+        this.descripcion = descripcion;
+    }
 
-    public String getImagenUrl() { return imagenUrl; }
-    public void setImagenUrl(String imagenUrl) { this.imagenUrl = imagenUrl; }
+    public Double getLat() {
+        return lat;
+    }
 
-    public String getVideoUrl() { return videoUrl; }
-    public void setVideoUrl(String videoUrl) { this.videoUrl = videoUrl; }
+    public void setLat(Double lat) {
+        this.lat = lat;
+    }
 
-    public String getAudioUrl() { return audioUrl; }
-    public void setAudioUrl(String audioUrl) { this.audioUrl = audioUrl; }
+    public Double getLng() {
+        return lng;
+    }
 
-    public String getNivelPrioridad() { return nivelPrioridad; }
-    public void setNivelPrioridad(String nivelPrioridad) { this.nivelPrioridad = nivelPrioridad; }
+    public void setLng(Double lng) {
+        this.lng = lng;
+    }
 
-    public Long getUsuarioId() { return usuarioId; }
-    public void setUsuarioId(Long usuarioId) { this.usuarioId = usuarioId; }
+    public String getImagenUrl() {
+        return imagenUrl;
+    }
 
-    public Long getComunidadId() { return comunidadId; }
-    public void setComunidadId(Long comunidadId) { this.comunidadId = comunidadId; }
+    public void setImagenUrl(String imagenUrl) {
+        this.imagenUrl = imagenUrl;
+    }
 
-    // ✅ Estos son los que te faltaban (por eso se veía rojo en tu controller)
-    public UsuarioRef getUsuario() { return usuario; }
-    public void setUsuario(UsuarioRef usuario) { this.usuario = usuario; }
+    public String getVideoUrl() {
+        return videoUrl;
+    }
 
-    public ComunidadRef getComunidad() { return comunidad; }
-    public void setComunidad(ComunidadRef comunidad) { this.comunidad = comunidad; }
+    public void setVideoUrl(String videoUrl) {
+        this.videoUrl = videoUrl;
+    }
 
-    // =====================
-    // Clases internas para { "usuario": {"id": ...} }
-    // =====================
+    public String getAudioUrl() {
+        return audioUrl;
+    }
+
+    public void setAudioUrl(String audioUrl) {
+        this.audioUrl = audioUrl;
+    }
+
+    public String getNivelPrioridad() {
+        return nivelPrioridad;
+    }
+
+    public void setNivelPrioridad(String nivelPrioridad) {
+        this.nivelPrioridad = nivelPrioridad;
+    }
+
+    public Long getUsuarioId() {
+        return usuarioId;
+    }
+
+    public void setUsuarioId(Long usuarioId) {
+        this.usuarioId = usuarioId;
+    }
+
+    public Long getComunidadId() {
+        return comunidadId;
+    }
+
+    public void setComunidadId(Long comunidadId) {
+        this.comunidadId = comunidadId;
+    }
+
+    public UsuarioRef getUsuario() {
+        return usuario;
+    }
+
+    public void setUsuario(UsuarioRef usuario) {
+        this.usuario = usuario;
+    }
+
+    public ComunidadRef getComunidad() {
+        return comunidad;
+    }
+
+    public void setComunidad(ComunidadRef comunidad) {
+        this.comunidad = comunidad;
+    }
+
+    // ======================
+    // GETTERS & SETTERS IA
+    // ======================
+
+    public String getAiCategoria() {
+        return aiCategoria;
+    }
+
+    public void setAiCategoria(String aiCategoria) {
+        this.aiCategoria = aiCategoria;
+    }
+
+    public String getAiPrioridad() {
+        return aiPrioridad;
+    }
+
+    public void setAiPrioridad(String aiPrioridad) {
+        this.aiPrioridad = aiPrioridad;
+    }
+
+    public Double getAiConfianza() {
+        return aiConfianza;
+    }
+
+    public void setAiConfianza(Double aiConfianza) {
+        this.aiConfianza = aiConfianza;
+    }
+
+    public Boolean getAiPosibleFalso() {
+        return aiPosibleFalso;
+    }
+
+    public void setAiPosibleFalso(Boolean aiPosibleFalso) {
+        this.aiPosibleFalso = aiPosibleFalso;
+    }
+
+    public String getAiMotivos() {
+        return aiMotivos;
+    }
+
+    public void setAiMotivos(String aiMotivos) {
+        this.aiMotivos = aiMotivos;
+    }
+
+    public String getAiRiesgos() {
+        return aiRiesgos;
+    }
+
+    public void setAiRiesgos(String aiRiesgos) {
+        this.aiRiesgos = aiRiesgos;
+    }
+
+    public String getAiAccionRecomendada() {
+        return aiAccionRecomendada;
+    }
+
+    public void setAiAccionRecomendada(String aiAccionRecomendada) {
+        this.aiAccionRecomendada = aiAccionRecomendada;
+    }
+
+    // ======================
+    // CLASES INTERNAS
+    // ======================
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class UsuarioRef {
         private Long id;
-
-        public UsuarioRef() {}
-        public UsuarioRef(Long id) { this.id = id; }
 
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }
@@ -97,9 +214,6 @@ public class IncidenteDTO {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ComunidadRef {
         private Long id;
-
-        public ComunidadRef() {}
-        public ComunidadRef(Long id) { this.id = id; }
 
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }

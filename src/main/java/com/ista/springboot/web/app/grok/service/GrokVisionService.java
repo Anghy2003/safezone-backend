@@ -44,7 +44,7 @@ public class GrokVisionService {
     /**
      * Clasifica incidente con texto + imágenes (URLs o base64 data URL).
      * Para video: pásale frames como imageUrls.
-     * Para audio: pásale transcript en el texto (transcripción).
+     * Para audio: pásale transcript en el texto.
      */
     public AiClassification analyzeIncident(AnalyzeRequest req) {
         if (req == null || !StringUtils.hasText(req.text())) {
@@ -56,21 +56,53 @@ public class GrokVisionService {
         payload.put("max_tokens", maxOutputTokens);
         payload.put("temperature", 0.2);
 
-        // System prompt: salida JSON estricta (sin texto extra)
+        // ===============================
+        // SYSTEM PROMPT ULTRA-PRECISO
+        // ===============================
         List<Map<String, Object>> messages = new ArrayList<>();
         messages.add(Map.of(
                 "role", "system",
                 "content",
-                "Eres un clasificador de incidentes de una app de seguridad comunitaria (SafeZone). " +
-                "Devuelve SOLO un JSON válido (sin markdown) con: " +
-                "{category, priority, confidence, possible_fake, reasons, risk_flags, recommended_action}. " +
-                "priority: ALTA|MEDIA|BAJA. confidence: 0..1. possible_fake: boolean."
+                """
+Eres un modelo especializado en análisis de incidentes de seguridad reales para una app de alertas comunitarias llamada SafeZone.
+
+Tu tarea es:
+1. Interpretar imágenes, texto, audio transcrito y contexto del usuario.
+2. Clasificar el incidente con máxima precisión y sin ambigüedad.
+3. Determinar si el incidente es real, leve, de riesgo o falso.
+4. NO inventar detalles. NO asumir cosas que no se vean o que el texto no indique.
+
+Debes devolver SOLO un JSON válido (sin texto extra) con esta estructura EXACTA:
+
+{
+  "category": "TIPO_DE_INCIDENTE",
+  "priority": "ALTA" | "MEDIA" | "BAJA",
+  "confidence": 0.0-1.0,
+  "possible_fake": true | false,
+  "reasons": ["motivo1", "motivo2"],
+  "risk_flags": ["indicador1", "indicador2"],
+  "recommended_action": "acción recomendada"
+}
+
+CRITERIOS DE PRIORIDAD:
+- ALTA: amenazas reales (armas, violencia, robos activos, fuego, víctimas, emergencias médicas críticas).
+- MEDIA: riesgo moderado (peleas leves, accidentes no graves, humo no confirmado, daños materiales).
+- BAJA: situaciones menores, molestias, riesgos dudosos o sin evidencia clara.
+- possible_fake = true si:
+    • no hay evidencia visual ni textual,
+    • el texto contradice la imagen,
+    • parece broma o no existe peligro real.
+
+Sé extremadamente preciso. No clasifiques como MEDIA o ALTA si no hay evidencia real.
+"""
         ));
 
-        // User content multimodal: lista de {type:image_url|text}
+        // ======================================
+        // USER CONTENT MULTIMODAL
+        // ======================================
         List<Map<String, Object>> userContent = new ArrayList<>();
 
-        // Imágenes por URL (recomendado)
+        // Imágenes por URL
         if (req.imageUrls() != null) {
             for (String url : req.imageUrls()) {
                 if (StringUtils.hasText(url)) {
@@ -78,14 +110,14 @@ public class GrokVisionService {
                             "type", "image_url",
                             "image_url", Map.of(
                                     "url", url,
-                                    "detail", imageDetail // low para ahorrar tokens
+                                    "detail", imageDetail
                             )
                     ));
                 }
             }
         }
 
-        // Imagen base64: debe venir como data URL: data:image/jpeg;base64,XXXX
+        // Imagen base64 (data URL)
         if (StringUtils.hasText(req.imageBase64DataUrl())) {
             userContent.add(Map.of(
                     "type", "image_url",
@@ -96,7 +128,7 @@ public class GrokVisionService {
             ));
         }
 
-        // Texto (incluye transcript si lo tienes)
+        // Texto principal del incidente (superprompt)
         userContent.add(Map.of(
                 "type", "text",
                 "text", buildPrompt(req)
@@ -105,7 +137,7 @@ public class GrokVisionService {
         messages.add(Map.of("role", "user", "content", userContent));
         payload.put("messages", messages);
 
-        // POST /v1/chat/completions
+        // Llamada POST
         String raw = restClient.post()
                 .uri("/v1/chat/completions")
                 .body(payload)
@@ -115,38 +147,61 @@ public class GrokVisionService {
         return parseClassificationFromResponse(raw);
     }
 
+    // ============================================================
+    // USER PROMPT – ULTRA-PRECISO PARA EVITAR ERRORES
+    // ============================================================
     private String buildPrompt(AnalyzeRequest req) {
         StringBuilder sb = new StringBuilder();
-        sb.append("Clasifica este incidente.\n\n");
+
+        sb.append("""
+Analiza el incidente con precisión profesional y SIN inventar nada.
+
+DATOS DEL INCIDENTE:
+
+""");
+
         sb.append("DESCRIPCION:\n").append(req.text()).append("\n\n");
 
         if (StringUtils.hasText(req.audioTranscript())) {
-            sb.append("AUDIO_TRANSCRIPCION:\n").append(req.audioTranscript()).append("\n\n");
+            sb.append("AUDIO_TRANSCRIPCION:\n")
+                    .append(req.audioTranscript())
+                    .append("\n\n");
         }
 
         if (StringUtils.hasText(req.userContext())) {
-            sb.append("CONTEXTO_USUARIO:\n").append(req.userContext()).append("\n\n");
+            sb.append("CONTEXTO_USUARIO:\n")
+                    .append(req.userContext())
+                    .append("\n\n");
         }
 
-        sb.append("REGLAS PARA 'possible_fake':\n");
-        sb.append("- Si no hay evidencia (sin descripcion util y sin imagen): probable.\n");
-        sb.append("- Si contradicciones fuertes entre imagen y texto: probable.\n");
-        sb.append("- Si el reporte no describe riesgo real: probable.\n\n");
-        sb.append("Devuelve SOLO JSON.");
+        sb.append("""
+INSTRUCCIONES ESTRICTAS:
+- Usa la IMAGEN como evidencia principal (si existe).
+- Si NO se ve peligro real → prioridad = BAJA.
+- Si el texto es alarmante PERO la imagen no lo confirma → posible_fake = true.
+- Si la evidencia es insuficiente → possible_fake = true.
+- NO devuelvas texto fuera del JSON.
+
+Devuelve SOLO el JSON solicitado.
+""");
+
         return sb.toString();
     }
 
+    // ============================================================
+    // PARSEO SEGURO DEL JSON DEVUELTO
+    // ============================================================
     private AiClassification parseClassificationFromResponse(String rawResponse) {
         try {
             JsonNode root = objectMapper.readTree(rawResponse);
             String content = root.at("/choices/0/message/content").asText(null);
+
             if (!StringUtils.hasText(content)) {
                 throw new IllegalStateException("Respuesta sin contenido en choices[0].message.content");
             }
 
-            // Asegurar JSON aunque el modelo meta texto extra (fallback)
+            // Extraer JSON puro
             String json = extractJsonObject(content);
-
             JsonNode j = objectMapper.readTree(json);
 
             return new AiClassification(
@@ -157,12 +212,15 @@ public class GrokVisionService {
                     arrayToList(j.path("reasons")),
                     arrayToList(j.path("risk_flags")),
                     textOrNull(j, "recommended_action"),
-                    rawResponse // útil para debug
+                    rawResponse
             );
+
         } catch (Exception e) {
             throw new RuntimeException("No se pudo parsear la respuesta de xAI: " + e.getMessage(), e);
         }
     }
+
+    // Utilidades
 
     private static String textOrNull(JsonNode node, String field) {
         JsonNode v = node.get(field);
@@ -184,12 +242,10 @@ public class GrokVisionService {
         if (start >= 0 && end > start) {
             return s.substring(start, end + 1).trim();
         }
-        // si no hay llaves, fallamos explícito
-        throw new IllegalStateException("El modelo no devolvió JSON. Respuesta: " + s);
+        throw new IllegalStateException("El modelo no devolvió JSON válido. Respuesta: " + s);
     }
 
-    // ===== DTOs internos (para no crear más archivos si no quieres) =====
-
+    // DTOs internos
     public record AnalyzeRequest(
             String text,
             List<String> imageUrls,

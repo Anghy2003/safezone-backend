@@ -19,9 +19,11 @@ public interface IComunidadService {
 
     List<Comunidad> findByEstado(EstadoComunidad estado);
 
-    // 🔹 Usuario solicita crear comunidad (nombre, dirección, ubicación)
-    Comunidad solicitarComunidad(Comunidad comunidad);
+    // ✅ recibe usuarioId para enlazar solicitante (SMS)
+    Comunidad solicitarComunidad(Comunidad comunidad, Long usuarioId);
 
-    // 🔹 Admin aprueba una comunidad solicitada y genera el código
+    // ✅ al aprobar: genera código y envía SMS
     Comunidad aprobarComunidad(Long comunidadId);
+
+    Comunidad findByIdWithMiembrosActivos(Long id);
 }

@@ -29,6 +29,10 @@ public class Comunidad implements Serializable {
     @Column(name = "codigo_acceso", length = 10, nullable = true, unique = true)
     private String codigoAcceso;
 
+    // ✅ NUEVO: Foto referencial de comunidad
+    @Column(name = "foto_url", columnDefinition = "TEXT")
+    private String fotoUrl;
+
     @Column(name = "centro_geografico", columnDefinition = "GEOGRAPHY(Point,4326)")
     private Point centroGeografico;
 
@@ -44,6 +48,10 @@ public class Comunidad implements Serializable {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private EstadoComunidad estado = EstadoComunidad.ACTIVA;
+
+    // ✅ NUEVO: quién solicitó (para SMS)
+    @Column(name = "solicitada_por_usuario_id")
+    private Long solicitadaPorUsuarioId;
 
     @Transient
     private Long miembrosCount;
@@ -73,6 +81,9 @@ public class Comunidad implements Serializable {
     public String getCodigoAcceso() { return codigoAcceso; }
     public void setCodigoAcceso(String codigoAcceso) { this.codigoAcceso = codigoAcceso; }
 
+    public String getFotoUrl() { return fotoUrl; }
+    public void setFotoUrl(String fotoUrl) { this.fotoUrl = fotoUrl; }
+
     public Point getCentroGeografico() { return centroGeografico; }
     public void setCentroGeografico(Point centroGeografico) { this.centroGeografico = centroGeografico; }
 
@@ -87,6 +98,11 @@ public class Comunidad implements Serializable {
 
     public EstadoComunidad getEstado() { return estado; }
     public void setEstado(EstadoComunidad estado) { this.estado = estado; }
+
+    public Long getSolicitadaPorUsuarioId() { return solicitadaPorUsuarioId; }
+    public void setSolicitadaPorUsuarioId(Long solicitadaPorUsuarioId) {
+        this.solicitadaPorUsuarioId = solicitadaPorUsuarioId;
+    }
 
     public Long getMiembrosCount() { return miembrosCount; }
     public void setMiembrosCount(Long miembrosCount) { this.miembrosCount = miembrosCount; }

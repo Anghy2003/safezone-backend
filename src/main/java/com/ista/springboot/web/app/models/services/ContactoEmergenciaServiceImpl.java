@@ -1,6 +1,7 @@
 package com.ista.springboot.web.app.models.services;
 
 import java.util.List;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -31,5 +32,11 @@ public class ContactoEmergenciaServiceImpl implements IContactoEmergenciaService
     @Override
     public void delete(Long id) {
         contactoDao.deleteById(id);
+    }
+
+    // ✅ IMPLEMENTACIÓN REAL
+    @Override
+    public List<ContactoEmergencia> findActivosByUsuarioId(Long usuarioId) {
+        return contactoDao.findByUsuario_IdAndActivoTrueOrderByPrioridadAsc(usuarioId);
     }
 }

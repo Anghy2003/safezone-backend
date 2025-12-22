@@ -1,6 +1,7 @@
 package com.ista.springboot.web.app.dto;
 
 import com.ista.springboot.web.app.models.entity.Comunidad;
+
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
@@ -9,38 +10,46 @@ public class ComunidadDTO {
     private String nombre;
     private String direccion;
     private String codigoAcceso;
+
+    private String fotoUrl;
+
     private Double centroLat;
     private Double centroLng;
+
     private BigDecimal radioKm;
     private Boolean activa;
     private OffsetDateTime fechaCreacion;
     private String estado;
+
     private Long miembrosCount;
 
-    // Constructor vacío
+    // ✅ útil para panel admin (opcional)
+    private Long solicitadaPorUsuarioId;
+
     public ComunidadDTO() {}
 
-    // Constructor desde entidad
     public ComunidadDTO(Comunidad comunidad) {
         this.id = comunidad.getId();
         this.nombre = comunidad.getNombre();
         this.direccion = comunidad.getDireccion();
         this.codigoAcceso = comunidad.getCodigoAcceso();
-        
-        // Extraer coordenadas del Point si existe
+
+        this.fotoUrl = comunidad.getFotoUrl();
+
         if (comunidad.getCentroGeografico() != null) {
             this.centroLat = comunidad.getCentroGeografico().getY();
             this.centroLng = comunidad.getCentroGeografico().getX();
         }
-        
+
         this.radioKm = comunidad.getRadioKm();
         this.activa = comunidad.getActiva();
         this.fechaCreacion = comunidad.getFechaCreacion();
         this.estado = comunidad.getEstado() != null ? comunidad.getEstado().toString() : null;
         this.miembrosCount = comunidad.getMiembrosCount();
+
+        this.solicitadaPorUsuarioId = comunidad.getSolicitadaPorUsuarioId();
     }
 
-    // Getters y Setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -52,6 +61,9 @@ public class ComunidadDTO {
 
     public String getCodigoAcceso() { return codigoAcceso; }
     public void setCodigoAcceso(String codigoAcceso) { this.codigoAcceso = codigoAcceso; }
+
+    public String getFotoUrl() { return fotoUrl; }
+    public void setFotoUrl(String fotoUrl) { this.fotoUrl = fotoUrl; }
 
     public Double getCentroLat() { return centroLat; }
     public void setCentroLat(Double centroLat) { this.centroLat = centroLat; }
@@ -73,4 +85,9 @@ public class ComunidadDTO {
 
     public Long getMiembrosCount() { return miembrosCount; }
     public void setMiembrosCount(Long miembrosCount) { this.miembrosCount = miembrosCount; }
+
+    public Long getSolicitadaPorUsuarioId() { return solicitadaPorUsuarioId; }
+    public void setSolicitadaPorUsuarioId(Long solicitadaPorUsuarioId) {
+        this.solicitadaPorUsuarioId = solicitadaPorUsuarioId;
+    }
 }

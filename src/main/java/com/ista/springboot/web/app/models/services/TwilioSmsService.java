@@ -21,22 +21,28 @@ public class TwilioSmsService {
 
     private boolean initialized = false;
 
-    private void initTwilio() {
+    // =====================================================
+    // Inicializa Twilio una sola vez
+    // =====================================================
+    private synchronized void initTwilio() {
         if (!initialized) {
             Twilio.init(accountSid, authToken);
             initialized = true;
         }
     }
 
+    // =====================================================
+    // Enviar SMS
+    // =====================================================
     public String enviarSms(String to, String mensaje) {
         initTwilio();
 
         Message sms = Message.creator(
-                new PhoneNumber(to),
-                new PhoneNumber(fromPhone),
+                new PhoneNumber(to),          // +5939xxxxxxx
+                new PhoneNumber(fromPhone),   // número Twilio
                 mensaje
         ).create();
 
-        return sms.getSid();
+        return sms.getSid(); // útil para logs/auditoría
     }
 }

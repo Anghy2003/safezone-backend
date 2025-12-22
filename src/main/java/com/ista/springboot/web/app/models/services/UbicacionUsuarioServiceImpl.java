@@ -41,19 +41,17 @@ public class UbicacionUsuarioServiceImpl implements IUbicacionUsuarioService {
         return ubicacionUsuarioDao.findByUsuarioId(usuarioId);
     }
 
-    // ✅ ESTE ES EL ARREGLO CLAVE
     @Override
     @Transactional(readOnly = true)
     public List<UsuarioCercanoDTO> findNearby(double lat, double lng, double radio, int lastMinutes, int limit) {
         List<Object[]> rows = ubicacionUsuarioDao.findNearbyNative(lat, lng, radio, lastMinutes, limit);
 
         return rows.stream().map(r -> {
-            // r[0]=id (Number), r[1]=name (String), r[2]=lat (Number), r[3]=lng (Number), r[4]=avatarUrl (String)
-            Long id = r[0] == null ? null : ((Number) r[0]).longValue();
-            String name = r[1] == null ? "Usuario" : r[1].toString();
-            Double latVal = r[2] == null ? null : ((Number) r[2]).doubleValue();
-            Double lngVal = r[3] == null ? null : ((Number) r[3]).doubleValue();
-            String avatarUrl = r[4] == null ? null : r[4].toString();
+            Long id = asLong(r, 0);
+            String name = asString(r, 1, "Usuario");
+            Double latVal = asDouble(r, 2);
+            Double lngVal = asDouble(r, 3);
+            String avatarUrl = asString(r, 4, null);
 
             return new UsuarioCercanoDTO(id, name, latVal, lngVal, avatarUrl);
         }).collect(Collectors.toList());
@@ -63,5 +61,28 @@ public class UbicacionUsuarioServiceImpl implements IUbicacionUsuarioService {
     @Transactional
     public void delete(Long id) {
         ubicacionUsuarioDao.deleteById(id);
+    }
+
+    // ===================== HELPERS (robustos) =====================
+
+    private static Long asLong(Object[] r, int idx) {
+        Object v = (r == null || r.length <= idx) ? null : r[idx];
+        if (v == null) return null;
+        if (v instanceof Number n) return n.longValue();
+        return Long.valueOf(v.toString());
+    }
+
+    private static Double asDouble(Object[] r, int idx) {
+        Object v = (r == null || r.length <= idx) ? null : r[idx];
+        if (v == null) return null;
+        if (v instanceof Number n) return n.doubleValue();
+        return Double.valueOf(v.toString());
+    }
+
+    private static String asString(Object[] r, int idx, String def) {
+        Object v = (r == null || r.length <= idx) ? null : r[idx];
+        if (v == null) return def;
+        String s = v.toString();
+        return s.isBlank() ? def : s;
     }
 }

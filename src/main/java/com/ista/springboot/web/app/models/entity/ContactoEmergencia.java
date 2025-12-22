@@ -32,10 +32,14 @@ public class ContactoEmergencia implements Serializable {
     @Column(nullable = false)
     private Boolean activo = true;
 
+    // 🔹 NUEVO CAMPO FOTO (URL)
+    @Column(name = "foto_url", length = 500)
+    private String fotoUrl;
+
     @Column(name = "fecha_agregado")
     private OffsetDateTime fechaAgregado;
 
-    // Getters y Setters
+    // ================= GETTERS & SETTERS =================
 
     public Long getId() {
         return id;
@@ -91,6 +95,14 @@ public class ContactoEmergencia implements Serializable {
 
     public void setActivo(Boolean activo) {
         this.activo = activo;
+    }
+
+    public String getFotoUrl() {
+        return fotoUrl;
+    }
+
+    public void setFotoUrl(String fotoUrl) {
+        this.fotoUrl = fotoUrl;
     }
 
     public OffsetDateTime getFechaAgregado() {

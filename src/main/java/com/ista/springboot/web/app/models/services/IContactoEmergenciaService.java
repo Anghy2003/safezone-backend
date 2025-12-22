@@ -4,8 +4,11 @@ import java.util.List;
 import com.ista.springboot.web.app.models.entity.ContactoEmergencia;
 
 public interface IContactoEmergenciaService {
-    public List<ContactoEmergencia> findAll();
-    public ContactoEmergencia save(ContactoEmergencia contacto);
-    public ContactoEmergencia findById(Long id);
-    public void delete(Long id);
+    List<ContactoEmergencia> findAll();
+    ContactoEmergencia save(ContactoEmergencia contacto);
+    ContactoEmergencia findById(Long id);
+    void delete(Long id);
+
+    // ✅ NUEVO
+    List<ContactoEmergencia> findActivosByUsuarioId(Long usuarioId);
 }

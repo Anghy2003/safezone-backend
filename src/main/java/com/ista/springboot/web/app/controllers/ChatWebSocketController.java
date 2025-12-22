@@ -1,20 +1,22 @@
 package com.ista.springboot.web.app.controllers;
 
 import java.time.OffsetDateTime;
-import java.util.HashMap;
-import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+import org.springframework.web.server.ResponseStatusException;
 
-import com.ista.springboot.web.app.models.dto.ChatMessageDto;
+import com.ista.springboot.web.app.dto.MensajeComunidadCreateDTO;
+import com.ista.springboot.web.app.dto.MensajeComunidadDTO;
 import com.ista.springboot.web.app.models.entity.Comunidad;
-import com.ista.springboot.web.app.models.entity.Notificacion;
+import com.ista.springboot.web.app.models.entity.MensajeComunidad;
 import com.ista.springboot.web.app.models.entity.Usuario;
-import com.ista.springboot.web.app.models.services.INotificacionService;
-import com.ista.springboot.web.app.models.dao.IUsuario;
+import com.ista.springboot.web.app.models.services.IComunidadService;
+import com.ista.springboot.web.app.models.services.IMensajeComunidadService;
+import com.ista.springboot.web.app.models.services.IUsuarioService;
 
 @Controller
 public class ChatWebSocketController {
@@ -23,129 +25,128 @@ public class ChatWebSocketController {
     private SimpMessagingTemplate messagingTemplate;
 
     @Autowired
-    private IUsuario usuarioDao;
+    private IMensajeComunidadService mensajeService;
 
     @Autowired
-    private INotificacionService notificacionService;
+    private IUsuarioService usuarioService;
 
+    @Autowired
+    private IComunidadService comunidadService;
 
-    // ============================ CHAT COMUNIDAD ============================
     @MessageMapping("/chat/comunidad")
-    public void enviarMensajeComunidad(ChatMessageDto dto) {
-        System.out.println("DEBUG WS /chat/comunidad → recibido DTO:");
-        if (dto != null) {
-            System.out.println("  usuarioId   = " + dto.getUsuarioId());
-            System.out.println("  comunidadId = " + dto.getComunidadId());
-            System.out.println("  contenido   = " + dto.getContenido());
-        } else {
-            System.out.println("  DTO ES NULL 🤯");
-        }
-
-        manejarMensajeChat(dto, "CHAT_COMUNIDAD");
+    public void enviarMensajeComunidad(MensajeComunidadCreateDTO dto) {
+        MensajeComunidadDTO saved = manejarMensajeChat(dto, "COMUNIDAD");
+        messagingTemplate.convertAndSend("/topic/comunidad-" + saved.getComunidadId(), saved);
     }
 
-    // ============================ CHAT VECINOS ==============================
     @MessageMapping("/chat/vecinos")
-    public void enviarMensajeVecinos(ChatMessageDto dto) {
-        System.out.println("DEBUG WS /chat/vecinos → recibido DTO:");
-        if (dto != null) {
-            System.out.println("  usuarioId   = " + dto.getUsuarioId());
-            System.out.println("  comunidadId = " + dto.getComunidadId());
-            System.out.println("  contenido   = " + dto.getContenido());
-        } else {
-            System.out.println("  DTO ES NULL 🤯");
-        }
-
-        manejarMensajeChat(dto, "CHAT_VECINOS");
+    public void enviarMensajeVecinos(MensajeComunidadCreateDTO dto) {
+        MensajeComunidadDTO saved = manejarMensajeChat(dto, "VECINOS");
+        messagingTemplate.convertAndSend("/topic/vecinos-" + saved.getComunidadId(), saved);
     }
 
+    public MensajeComunidadDTO manejarMensajeChat(MensajeComunidadCreateDTO dto, String canalDefault) {
 
-    // ============================ LÓGICA GENERAL =============================
-    private void manejarMensajeChat(ChatMessageDto dto, String tipoNotificacion) {
-
-        System.out.println("DEBUG manejarMensajeChat() → tipo=" + tipoNotificacion);
         if (dto == null) {
-            System.out.println("DEBUG manejarMensajeChat → DTO null, se aborta");
-            return;
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payload vacío");
         }
-
-        System.out.println("DEBUG manejarMensajeChat → usuarioId=" + dto.getUsuarioId()
-                + ", comunidadId=" + dto.getComunidadId()
-                + ", contenido=" + dto.getContenido());
-
         if (dto.getUsuarioId() == null || dto.getComunidadId() == null) {
-            System.out.println("DEBUG manejarMensajeChat → usuarioId o comunidadId NULOS, se aborta");
-            return; // podrías lanzar excepción si quieres
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "usuarioId y comunidadId son obligatorios");
         }
 
-        // 🔹 Cargar usuario real (evita entidades proxy)
-        System.out.println("DEBUG manejarMensajeChat → buscando Usuario id=" + dto.getUsuarioId());
-        Usuario usuario = usuarioDao.findById(dto.getUsuarioId()).orElse(null);
+        final boolean tieneTexto = dto.getMensaje() != null && !dto.getMensaje().trim().isEmpty();
+        final boolean tieneImagen = dto.getImagenUrl() != null && !dto.getImagenUrl().isBlank();
+        final boolean tieneVideo  = dto.getVideoUrl() != null && !dto.getVideoUrl().isBlank();
+        final boolean tieneAudio  = dto.getAudioUrl() != null && !dto.getAudioUrl().isBlank();
+        final boolean tieneAdjunto = tieneImagen || tieneVideo || tieneAudio;
+
+        if (!tieneTexto && !tieneAdjunto) {
+            throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "El mensaje debe tener texto o adjunto (imagen/video/audio)"
+            );
+        }
+
+        final Usuario usuario = usuarioService.findById(dto.getUsuarioId());
         if (usuario == null) {
-            System.out.println("DEBUG manejarMensajeChat → Usuario no encontrado, se aborta");
-            return;
-        }
-        System.out.println("DEBUG manejarMensajeChat → Usuario encontrado: "
-                + usuario.getId() + " - " + usuario.getNombre());
-
-        // 🔹 Crear solo referencia a comunidad (NO cargar entidad completa)
-        Comunidad comunidad = new Comunidad();
-        comunidad.setId(dto.getComunidadId());
-        System.out.println("DEBUG manejarMensajeChat → Comunidad referida con id=" + dto.getComunidadId());
-
-        // ===================== Crear Notificacion segura =====================
-        Notificacion noti = new Notificacion();
-        noti.setUsuario(usuario);
-        noti.setComunidad(comunidad);
-        noti.setIncidente(null);
-        noti.setTipoNotificacion(tipoNotificacion);
-        noti.setTitulo("Mensaje de chat");
-        noti.setMensaje(dto.getContenido());
-        noti.setLeido(false);
-        noti.setEnviado(false);
-        noti.setFechaEnvio(OffsetDateTime.now());
-
-        System.out.println("DEBUG manejarMensajeChat → guardando Notificacion en BD...");
-        Notificacion guardada = notificacionService.save(noti);
-        System.out.println("DEBUG manejarMensajeChat → Notificacion guardada id="
-                + guardada.getId() + ", tipo=" + guardada.getTipoNotificacion());
-
-        // ================== Construir Payload seguro para WebSocket ==================
-        Map<String, Object> usuarioJson = new HashMap<>();
-        usuarioJson.put("id", usuario.getId());
-        usuarioJson.put("nombre", usuario.getNombre()
-                + (usuario.getApellido() != null ? " " + usuario.getApellido() : ""));
-        usuarioJson.put("fotoUrl", usuario.getFotoUrl());
-
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("tipoNotificacion", guardada.getTipoNotificacion());
-        payload.put("mensaje", guardada.getMensaje());
-        payload.put("fechaEnvio",
-                guardada.getFechaEnvio() != null ? guardada.getFechaEnvio().toString() : null);
-        payload.put("usuario", usuarioJson);
-        payload.put("comunidadId", dto.getComunidadId()); // ⬅️ Necesario para Flutter
-
-        System.out.println("DEBUG manejarMensajeChat → payload construido:");
-        System.out.println("  tipoNotificacion=" + payload.get("tipoNotificacion"));
-        System.out.println("  mensaje=" + payload.get("mensaje"));
-        System.out.println("  fechaEnvio=" + payload.get("fechaEnvio"));
-        System.out.println("  usuario.id=" + usuarioJson.get("id"));
-        System.out.println("  comunidadId=" + payload.get("comunidadId"));
-
-        // ======================= Enviar por WebSocket =======================
-        Long comunidadId = dto.getComunidadId();
-
-        if ("CHAT_COMUNIDAD".equals(tipoNotificacion)) {
-            System.out.println("DEBUG manejarMensajeChat → enviando a /topic/comunidad-" + comunidadId);
-            messagingTemplate.convertAndSend("/topic/comunidad-" + comunidadId, payload);
-
-        } else if ("CHAT_VECINOS".equals(tipoNotificacion)) {
-            System.out.println("DEBUG manejarMensajeChat → enviando a /topic/vecinos-" + comunidadId);
-            messagingTemplate.convertAndSend("/topic/vecinos-" + comunidadId, payload);
-        } else {
-            System.out.println("DEBUG manejarMensajeChat → tipoNotificacion desconocido: " + tipoNotificacion);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Usuario no encontrado");
         }
 
-        System.out.println("DEBUG manejarMensajeChat → FIN\n");
+        final Comunidad comunidad = comunidadService.findById(dto.getComunidadId());
+        if (comunidad == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Comunidad no encontrada");
+        }
+
+        // ===================== CANAL =====================
+        String canal = (dto.getCanal() != null && !dto.getCanal().isBlank())
+                ? dto.getCanal().trim().toUpperCase()
+                : canalDefault;
+
+        if (!"COMUNIDAD".equals(canal) && !"VECINOS".equals(canal)) {
+            canal = canalDefault;
+        }
+
+        // ===================== TIPO =====================
+        String tipo = (dto.getTipo() != null && !dto.getTipo().isBlank())
+                ? dto.getTipo().trim().toLowerCase()
+                : "texto";
+
+        // Si viene adjunto y tipo viene vacío o "texto", lo inferimos si NO hay texto
+        if (("texto".equals(tipo) || tipo.isBlank()) && !tieneTexto && tieneAdjunto) {
+            if (tieneImagen) tipo = "imagen";
+            else if (tieneVideo) tipo = "video";
+            else if (tieneAudio) tipo = "audio";
+        }
+
+        // ===================== FILTRO SENSIBLE =====================
+        final boolean contenidoSensible = Boolean.TRUE.equals(dto.getContenidoSensible());
+        final String sensibilidadMotivo = clean(dto.getSensibilidadMotivo());
+        final Double sensibilidadScore = dto.getSensibilidadScore(); // puede ser null
+
+        // ===================== ARMAR ENTITY =====================
+        MensajeComunidad m = new MensajeComunidad();
+        m.setUsuario(usuario);
+        m.setComunidad(comunidad);
+
+        m.setMensaje(dto.getMensaje());
+        m.setImagenUrl(dto.getImagenUrl());
+        m.setVideoUrl(dto.getVideoUrl());
+        m.setAudioUrl(dto.getAudioUrl());
+
+        m.setCanal(canal);
+        m.setTipo(tipo);
+
+        if (dto.getReplyToId() != null) {
+            MensajeComunidad parent = mensajeService.findById(dto.getReplyToId());
+            if (parent == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "replyToId no existe");
+            }
+            if (parent.getComunidad() != null
+                    && parent.getComunidad().getId() != null
+                    && !parent.getComunidad().getId().equals(dto.getComunidadId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "replyToId pertenece a otra comunidad");
+            }
+            m.setReplyTo(parent);
+        }
+
+        m.setFechaEnvio(OffsetDateTime.now());
+
+        // ✅ Guardar campos sensibles
+        m.setContenidoSensible(contenidoSensible);
+        m.setSensibilidadMotivo(sensibilidadMotivo);
+        m.setSensibilidadScore(sensibilidadScore);
+
+        MensajeComunidad guardado = mensajeService.save(m);
+        return new MensajeComunidadDTO(guardado);
+    }
+
+    public void publicar(String destino, MensajeComunidadDTO payload) {
+        messagingTemplate.convertAndSend(destino, payload);
+    }
+
+    private String clean(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
     }
 }

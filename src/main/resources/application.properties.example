@@ -31,7 +31,7 @@ xai.model=grok-2-vision-1212
 xai.image-detail=low
 xai.max-output-tokens=350
 
-server.port=8080
+server.port=${PORT:8080}
 server.error.include-message=always
 
 logging.level.org.springframework=INFO

@@ -30,8 +30,6 @@ public class UbicacionUsuarioRestController {
     private final GeometryFactory geometryFactory =
             new GeometryFactory(new PrecisionModel(), 4326);
 
-    // ========== CRUD BÁSICO ==========
-
     @GetMapping("/ubicaciones-usuario")
     public List<UbicacionUsuario> index() {
         return ubicacionUsuarioService.findAll();
@@ -52,6 +50,9 @@ public class UbicacionUsuarioRestController {
         if (ubicacionUsuario.getUltimaActualizacion() == null) {
             ubicacionUsuario.setUltimaActualizacion(OffsetDateTime.now());
         }
+        if (ubicacionUsuario.getUbicacion() != null) {
+            ubicacionUsuario.getUbicacion().setSRID(4326);
+        }
         return ubicacionUsuarioService.save(ubicacionUsuario);
     }
 
@@ -67,6 +68,9 @@ public class UbicacionUsuarioRestController {
         if (ubicacionUsuario.getUltimaActualizacion() == null) {
             ubicacionUsuario.setUltimaActualizacion(OffsetDateTime.now());
         }
+        if (ubicacionUsuario.getUbicacion() != null) {
+            ubicacionUsuario.getUbicacion().setSRID(4326);
+        }
 
         return ubicacionUsuarioService.save(ubicacionUsuario);
     }
@@ -80,8 +84,6 @@ public class UbicacionUsuarioRestController {
         }
         ubicacionUsuarioService.delete(id);
     }
-
-    // ========== ACTUALIZAR UBICACIÓN ACTUAL ==========
 
     @PostMapping("/ubicaciones-usuario/actual")
     public ResponseEntity<Map<String, Object>> actualizarUbicacionActual(
@@ -100,6 +102,8 @@ public class UbicacionUsuarioRestController {
         }
 
         Point punto = geometryFactory.createPoint(new org.locationtech.jts.geom.Coordinate(lng, lat));
+        punto.setSRID(4326);
+
         ubicacion.setUbicacion(punto);
         ubicacion.setUltimaActualizacion(OffsetDateTime.now());
         ubicacion.setPrecisionMetros(precision);
@@ -117,16 +121,17 @@ public class UbicacionUsuarioRestController {
         return ResponseEntity.ok(resp);
     }
 
-    // ========== USUARIOS CERCANOS (OPTIMIZADO PostGIS) ==========
-
     @GetMapping("/usuarios-cercanos")
     public List<UsuarioCercanoDTO> usuariosCercanos(
             @RequestParam double lat,
             @RequestParam double lng,
             @RequestParam(defaultValue = "500") double radio,
             @RequestParam(defaultValue = "20") int lastMinutes,
-            @RequestParam(defaultValue = "200") int limit
+            @RequestParam(defaultValue = "200") int limit,
+            @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
+        System.out.println("Authorization header /usuarios-cercanos = " + authorization);
+
         double safeRadio = Math.min(Math.max(radio, 10), 5000);
         int safeLimit = Math.min(Math.max(limit, 1), 500);
         int safeMinutes = Math.min(Math.max(lastMinutes, 1), 120);

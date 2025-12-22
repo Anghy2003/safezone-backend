@@ -3,6 +3,8 @@ package com.ista.springboot.web.app.models.services;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import com.ista.springboot.web.app.models.dao.IMensajeComunidad;
@@ -16,7 +18,22 @@ public class MensajeComunidadServiceImpl implements IMensajeComunidadService {
 
     @Override
     public List<MensajeComunidad> findAll() {
-        return (List<MensajeComunidad>) mensajeDao.findAll();
+        return mensajeDao.findAll();
+    }
+
+    @Override
+    public List<MensajeComunidad> findByComunidad(Long comunidadId) {
+        return mensajeDao.findByComunidad_IdOrderByFechaEnvioAsc(comunidadId);
+    }
+
+    @Override
+    public List<MensajeComunidad> findByComunidadAndCanal(Long comunidadId, String canal) {
+        return mensajeDao.findByComunidad_IdAndCanalOrderByFechaEnvioAsc(comunidadId, canal);
+    }
+
+    @Override
+    public Page<MensajeComunidad> findPageByComunidadAndCanal(Long comunidadId, String canal, int page, int size) {
+        return mensajeDao.findByComunidad_IdAndCanalOrderByFechaEnvioDesc(comunidadId, canal, PageRequest.of(page, size));
     }
 
     @Override
