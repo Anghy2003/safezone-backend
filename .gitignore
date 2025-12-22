@@ -25,3 +25,17 @@ src/main/resources/application-prod.yml
 
 # Archivo de ejemplo SÍ se sube
 !src/main/resources/application.properties.example
+
+# ===== IDEs =====
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# ===== Build =====
+/target/
