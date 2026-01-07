@@ -1,3 +1,5 @@
+// package com.ista.springboot.web.app.models.services;
+
 package com.ista.springboot.web.app.models.services;
 
 import java.util.List;
@@ -7,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import com.ista.springboot.web.app.models.entity.ContactoEmergencia;
 import com.ista.springboot.web.app.models.entity.Incidente;
+import com.ista.springboot.web.app.models.entity.Usuario;
 
 @Service
 public class AlertaSmsService {
@@ -14,10 +17,17 @@ public class AlertaSmsService {
     private final IContactoEmergenciaService contactoService;
     private final TwilioSmsService twilioSmsService;
 
-    public AlertaSmsService(IContactoEmergenciaService contactoService,
-                            TwilioSmsService twilioSmsService) {
+    // ✅ NUEVO: para poder incluir nombre del usuario en el SMS
+    private final IUsuarioService usuarioService;
+
+    public AlertaSmsService(
+            IContactoEmergenciaService contactoService,
+            TwilioSmsService twilioSmsService,
+            IUsuarioService usuarioService
+    ) {
         this.contactoService = contactoService;
         this.twilioSmsService = twilioSmsService;
+        this.usuarioService = usuarioService;
     }
 
     // 🔥 ASYNC para no bloquear el POST /incidentes
@@ -29,11 +39,13 @@ public class AlertaSmsService {
         List<ContactoEmergencia> contactos =
                 contactoService.findActivosByUsuarioId(usuarioId);
 
-        if (contactos.isEmpty()) return;
+        if (contactos == null || contactos.isEmpty()) return;
 
-        String mensaje = construirMensaje(incidente);
+        String mensaje = construirMensaje(usuarioId, incidente);
 
         for (ContactoEmergencia c : contactos) {
+            if (c == null) continue;
+
             String to = normalizarE164Ecuador(c.getTelefono());
             if (to == null) continue;
 
@@ -46,9 +58,32 @@ public class AlertaSmsService {
         }
     }
 
-    private String construirMensaje(Incidente inc) {
-        String tipo = inc.getTipo() != null ? inc.getTipo() : "INCIDENTE";
-        String prioridad = inc.getNivelPrioridad() != null ? inc.getNivelPrioridad() : "ALTA";
+    private String construirMensaje(Long usuarioId, Incidente inc) {
+
+        // Nombre del usuario (para "quién reporta")
+        String nombre = "Usuario";
+        try {
+            if (usuarioId != null) {
+                Usuario u = usuarioService.findById(usuarioId);
+                if (u != null && u.getNombre() != null && !u.getNombre().isBlank()) {
+                    nombre = u.getNombre().trim();
+                }
+            }
+        } catch (Exception ignored) {
+            // si falla la consulta, no rompemos el SMS
+        }
+
+        String tipo = (inc.getTipo() != null && !inc.getTipo().isBlank())
+                ? inc.getTipo().trim()
+                : "INCIDENTE";
+
+        String prioridad = (inc.getNivelPrioridad() != null && !inc.getNivelPrioridad().isBlank())
+                ? inc.getNivelPrioridad().trim()
+                : "ALTA";
+
+        String desc = (inc.getDescripcion() != null && !inc.getDescripcion().isBlank())
+                ? inc.getDescripcion().trim()
+                : "Sin descripción";
 
         String ubicacion = "";
         if (inc.getUbicacion() != null) {
@@ -58,12 +93,12 @@ public class AlertaSmsService {
                       + "#map=18/" + lat + "/" + lng;
         }
 
-        String desc = inc.getDescripcion() != null ? inc.getDescripcion() + ". " : "";
-
-        return "🚨 ALERTA SafeZone: " + tipo
-                + " (Prioridad " + prioridad + "). "
-                + desc
-                + ubicacion;
+        // ✅ Formato claro y “con más info”
+        return "🚨 SafeZone ALERTA\n"
+                + "Usuario: " + nombre + "\n"
+                + "Qué pasó: " + desc + "\n"
+                + "Tipo: " + tipo + " (Prioridad " + prioridad + ")\n"
+                + "Ubicación:" + ubicacion;
     }
 
     private String normalizarE164Ecuador(String input) {

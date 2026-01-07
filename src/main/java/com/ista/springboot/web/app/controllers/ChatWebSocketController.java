@@ -54,7 +54,7 @@ public class ChatWebSocketController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "usuarioId y comunidadId son obligatorios");
         }
 
-        final boolean tieneTexto = dto.getMensaje() != null && !dto.getMensaje().trim().isEmpty();
+        final boolean tieneTexto  = dto.getMensaje() != null && !dto.getMensaje().trim().isEmpty();
         final boolean tieneImagen = dto.getImagenUrl() != null && !dto.getImagenUrl().isBlank();
         final boolean tieneVideo  = dto.getVideoUrl() != null && !dto.getVideoUrl().isBlank();
         final boolean tieneAudio  = dto.getAudioUrl() != null && !dto.getAudioUrl().isBlank();
@@ -98,10 +98,13 @@ public class ChatWebSocketController {
             else if (tieneAudio) tipo = "audio";
         }
 
-        // ===================== FILTRO SENSIBLE =====================
-        final boolean contenidoSensible = Boolean.TRUE.equals(dto.getContenidoSensible());
-        final String sensibilidadMotivo = clean(dto.getSensibilidadMotivo());
-        final Double sensibilidadScore = dto.getSensibilidadScore(); // puede ser null
+        // ===================== FILTRO SENSIBLE (FORZADO POR BACKEND) =====================
+        // ✅ Regla: TODO adjunto es sensible (porque son reportes/incidentes)
+        final boolean contenidoSensible = tieneAdjunto;
+
+        // Motivo/score: los puedes personalizar
+        final String sensibilidadMotivo = contenidoSensible ? "Reporte / Incidente" : null;
+        final Double sensibilidadScore  = contenidoSensible ? 1.0 : null;
 
         // ===================== ARMAR ENTITY =====================
         MensajeComunidad m = new MensajeComunidad();
@@ -131,7 +134,7 @@ public class ChatWebSocketController {
 
         m.setFechaEnvio(OffsetDateTime.now());
 
-        // ✅ Guardar campos sensibles
+        // ✅ Guardar campos sensibles (forzados)
         m.setContenidoSensible(contenidoSensible);
         m.setSensibilidadMotivo(sensibilidadMotivo);
         m.setSensibilidadScore(sensibilidadScore);
@@ -142,11 +145,5 @@ public class ChatWebSocketController {
 
     public void publicar(String destino, MensajeComunidadDTO payload) {
         messagingTemplate.convertAndSend(destino, payload);
-    }
-
-    private String clean(String s) {
-        if (s == null) return null;
-        String t = s.trim();
-        return t.isEmpty() ? null : t;
     }
 }

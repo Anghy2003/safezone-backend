@@ -37,176 +37,88 @@ public class IncidenteDTO {
     private String aiRiesgos;
     private String aiAccionRecomendada;
 
+    // ======================
+    // OFFLINE / SYNC (CASO A)
+    // ======================
+    private String clientGeneratedId;     // UUID recomendado
+    private String canalEnvio;           // ONLINE | OFFLINE_SMS | OFFLINE_QUEUE
+    private Boolean smsEnviadoPorCliente;
+
     public IncidenteDTO() {}
 
-    // ======================
-    // GETTERS & SETTERS
-    // ======================
+    // ===== GETTERS/SETTERS =====
+    public String getTipo() { return tipo; }
+    public void setTipo(String tipo) { this.tipo = tipo; }
 
-    public String getTipo() {
-        return tipo;
-    }
+    public String getDescripcion() { return descripcion; }
+    public void setDescripcion(String descripcion) { this.descripcion = descripcion; }
 
-    public void setTipo(String tipo) {
-        this.tipo = tipo;
-    }
+    public Double getLat() { return lat; }
+    public void setLat(Double lat) { this.lat = lat; }
 
-    public String getDescripcion() {
-        return descripcion;
-    }
+    public Double getLng() { return lng; }
+    public void setLng(Double lng) { this.lng = lng; }
 
-    public void setDescripcion(String descripcion) {
-        this.descripcion = descripcion;
-    }
+    public String getImagenUrl() { return imagenUrl; }
+    public void setImagenUrl(String imagenUrl) { this.imagenUrl = imagenUrl; }
 
-    public Double getLat() {
-        return lat;
-    }
+    public String getVideoUrl() { return videoUrl; }
+    public void setVideoUrl(String videoUrl) { this.videoUrl = videoUrl; }
 
-    public void setLat(Double lat) {
-        this.lat = lat;
-    }
+    public String getAudioUrl() { return audioUrl; }
+    public void setAudioUrl(String audioUrl) { this.audioUrl = audioUrl; }
 
-    public Double getLng() {
-        return lng;
-    }
+    public String getNivelPrioridad() { return nivelPrioridad; }
+    public void setNivelPrioridad(String nivelPrioridad) { this.nivelPrioridad = nivelPrioridad; }
 
-    public void setLng(Double lng) {
-        this.lng = lng;
-    }
+    public Long getUsuarioId() { return usuarioId; }
+    public void setUsuarioId(Long usuarioId) { this.usuarioId = usuarioId; }
 
-    public String getImagenUrl() {
-        return imagenUrl;
-    }
+    public Long getComunidadId() { return comunidadId; }
+    public void setComunidadId(Long comunidadId) { this.comunidadId = comunidadId; }
 
-    public void setImagenUrl(String imagenUrl) {
-        this.imagenUrl = imagenUrl;
-    }
+    public UsuarioRef getUsuario() { return usuario; }
+    public void setUsuario(UsuarioRef usuario) { this.usuario = usuario; }
 
-    public String getVideoUrl() {
-        return videoUrl;
-    }
+    public ComunidadRef getComunidad() { return comunidad; }
+    public void setComunidad(ComunidadRef comunidad) { this.comunidad = comunidad; }
 
-    public void setVideoUrl(String videoUrl) {
-        this.videoUrl = videoUrl;
-    }
+    // ===== IA =====
+    public String getAiCategoria() { return aiCategoria; }
+    public void setAiCategoria(String aiCategoria) { this.aiCategoria = aiCategoria; }
 
-    public String getAudioUrl() {
-        return audioUrl;
-    }
+    public String getAiPrioridad() { return aiPrioridad; }
+    public void setAiPrioridad(String aiPrioridad) { this.aiPrioridad = aiPrioridad; }
 
-    public void setAudioUrl(String audioUrl) {
-        this.audioUrl = audioUrl;
-    }
+    public Double getAiConfianza() { return aiConfianza; }
+    public void setAiConfianza(Double aiConfianza) { this.aiConfianza = aiConfianza; }
 
-    public String getNivelPrioridad() {
-        return nivelPrioridad;
-    }
+    public Boolean getAiPosibleFalso() { return aiPosibleFalso; }
+    public void setAiPosibleFalso(Boolean aiPosibleFalso) { this.aiPosibleFalso = aiPosibleFalso; }
 
-    public void setNivelPrioridad(String nivelPrioridad) {
-        this.nivelPrioridad = nivelPrioridad;
-    }
+    public String getAiMotivos() { return aiMotivos; }
+    public void setAiMotivos(String aiMotivos) { this.aiMotivos = aiMotivos; }
 
-    public Long getUsuarioId() {
-        return usuarioId;
-    }
+    public String getAiRiesgos() { return aiRiesgos; }
+    public void setAiRiesgos(String aiRiesgos) { this.aiRiesgos = aiRiesgos; }
 
-    public void setUsuarioId(Long usuarioId) {
-        this.usuarioId = usuarioId;
-    }
+    public String getAiAccionRecomendada() { return aiAccionRecomendada; }
+    public void setAiAccionRecomendada(String aiAccionRecomendada) { this.aiAccionRecomendada = aiAccionRecomendada; }
 
-    public Long getComunidadId() {
-        return comunidadId;
-    }
+    // ===== OFFLINE =====
+    public String getClientGeneratedId() { return clientGeneratedId; }
+    public void setClientGeneratedId(String clientGeneratedId) { this.clientGeneratedId = clientGeneratedId; }
 
-    public void setComunidadId(Long comunidadId) {
-        this.comunidadId = comunidadId;
-    }
+    public String getCanalEnvio() { return canalEnvio; }
+    public void setCanalEnvio(String canalEnvio) { this.canalEnvio = canalEnvio; }
 
-    public UsuarioRef getUsuario() {
-        return usuario;
-    }
+    public Boolean getSmsEnviadoPorCliente() { return smsEnviadoPorCliente; }
+    public void setSmsEnviadoPorCliente(Boolean smsEnviadoPorCliente) { this.smsEnviadoPorCliente = smsEnviadoPorCliente; }
 
-    public void setUsuario(UsuarioRef usuario) {
-        this.usuario = usuario;
-    }
-
-    public ComunidadRef getComunidad() {
-        return comunidad;
-    }
-
-    public void setComunidad(ComunidadRef comunidad) {
-        this.comunidad = comunidad;
-    }
-
-    // ======================
-    // GETTERS & SETTERS IA
-    // ======================
-
-    public String getAiCategoria() {
-        return aiCategoria;
-    }
-
-    public void setAiCategoria(String aiCategoria) {
-        this.aiCategoria = aiCategoria;
-    }
-
-    public String getAiPrioridad() {
-        return aiPrioridad;
-    }
-
-    public void setAiPrioridad(String aiPrioridad) {
-        this.aiPrioridad = aiPrioridad;
-    }
-
-    public Double getAiConfianza() {
-        return aiConfianza;
-    }
-
-    public void setAiConfianza(Double aiConfianza) {
-        this.aiConfianza = aiConfianza;
-    }
-
-    public Boolean getAiPosibleFalso() {
-        return aiPosibleFalso;
-    }
-
-    public void setAiPosibleFalso(Boolean aiPosibleFalso) {
-        this.aiPosibleFalso = aiPosibleFalso;
-    }
-
-    public String getAiMotivos() {
-        return aiMotivos;
-    }
-
-    public void setAiMotivos(String aiMotivos) {
-        this.aiMotivos = aiMotivos;
-    }
-
-    public String getAiRiesgos() {
-        return aiRiesgos;
-    }
-
-    public void setAiRiesgos(String aiRiesgos) {
-        this.aiRiesgos = aiRiesgos;
-    }
-
-    public String getAiAccionRecomendada() {
-        return aiAccionRecomendada;
-    }
-
-    public void setAiAccionRecomendada(String aiAccionRecomendada) {
-        this.aiAccionRecomendada = aiAccionRecomendada;
-    }
-
-    // ======================
-    // CLASES INTERNAS
-    // ======================
-
+    // ===== CLASES INTERNAS =====
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class UsuarioRef {
         private Long id;
-
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }
     }
@@ -214,7 +126,6 @@ public class IncidenteDTO {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ComunidadRef {
         private Long id;
-
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }
     }

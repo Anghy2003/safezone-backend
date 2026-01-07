@@ -9,10 +9,10 @@ import com.ista.springboot.web.app.models.entity.UsuarioComunidad;
 
 public interface IUsuarioComunidad extends JpaRepository<UsuarioComunidad, Long> {
 
-    // 👉 Para contar miembros por comunidad
+    // Contar miembros por comunidad
     long countByComunidadId(Long comunidadId);
 
-    // 👉 Para validar que un usuario solo esté en UNA comunidad
+    // Regla: usuario solo puede estar en UNA comunidad
     boolean existsByUsuarioId(Long usuarioId);
 
     boolean existsByUsuarioIdAndComunidadId(Long usuarioId, Long comunidadId);
@@ -21,6 +21,13 @@ public interface IUsuarioComunidad extends JpaRepository<UsuarioComunidad, Long>
 
     Optional<UsuarioComunidad> findFirstByUsuarioId(Long usuarioId);
 
-    // (opcional, si un día quieres listar todas las comunidades de un usuario)
     List<UsuarioComunidad> findByUsuarioId(Long usuarioId);
+
+    // Admin único global (en toda la tabla)
+    boolean existsByRolIgnoreCase(String rol);
+
+    Optional<UsuarioComunidad> findFirstByRolIgnoreCase(String rol);
+
+    // Verificar si ESTE usuario es ADMIN
+    boolean existsByUsuarioIdAndRolIgnoreCase(Long usuarioId, String rol);
 }

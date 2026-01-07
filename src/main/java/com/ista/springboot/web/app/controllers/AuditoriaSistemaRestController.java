@@ -10,7 +10,6 @@ import org.springframework.web.server.ResponseStatusException;
 import com.ista.springboot.web.app.models.entity.AuditoriaSistema;
 import com.ista.springboot.web.app.models.services.IAuditoriaSistemaService;
 
-@CrossOrigin(origins = { "http://localhost:4200" })
 @RestController
 @RequestMapping("/api")
 public class AuditoriaSistemaRestController {

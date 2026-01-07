@@ -5,4 +5,6 @@ import com.ista.springboot.web.app.models.entity.Incidente;
 
 public interface IIncidente extends CrudRepository<Incidente, Long> {
 
+    // ✅ CASO A: idempotencia
+    Incidente findFirstByClientGeneratedId(String clientGeneratedId);
 }

@@ -33,4 +33,10 @@ public class IncidenteServiceImpl implements IIncidenteService {
     public void delete(Long id) {
         incidenteDao.deleteById(id);
     }
+
+    @Override
+    public Incidente findByClientGeneratedId(String clientGeneratedId) {
+        if (clientGeneratedId == null || clientGeneratedId.trim().isEmpty()) return null;
+        return incidenteDao.findFirstByClientGeneratedId(clientGeneratedId.trim());
+    }
 }

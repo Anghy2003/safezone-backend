@@ -1,5 +1,10 @@
 spring.application.name=SafeZone
 
+
+server.forward-headers-strategy=framework
+# (Opcional)
+springdoc.swagger-ui.use-root-path=true
+
 # Database
 spring.datasource.url=${DATABASE_URL}
 spring.datasource.username=${DATABASE_USERNAME}

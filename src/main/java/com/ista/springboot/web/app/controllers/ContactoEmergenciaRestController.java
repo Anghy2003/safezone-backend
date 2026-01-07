@@ -12,7 +12,7 @@ import com.ista.springboot.web.app.models.entity.Usuario;
 import com.ista.springboot.web.app.models.services.IContactoEmergenciaService;
 import com.ista.springboot.web.app.models.services.IUsuarioService;
 
-@CrossOrigin(origins = { "http://localhost:4200" })
+@CrossOrigin(origins = { "http://localhost:5173" })
 @RestController
 @RequestMapping("/api")
 public class ContactoEmergenciaRestController {

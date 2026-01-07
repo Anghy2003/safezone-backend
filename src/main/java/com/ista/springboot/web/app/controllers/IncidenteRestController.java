@@ -38,7 +38,6 @@ public class IncidenteRestController {
     @Autowired private IRutaService rutaService;
     @Autowired private NotificacionPushService notificacionPushService;
 
-    // ✅ NUEVO: Envío SMS a contactos de emergencia (en background con @Async)
     @Autowired private AlertaSmsService alertaSmsService;
 
     private static final GeometryFactory GEOMETRY_FACTORY =
@@ -67,35 +66,52 @@ public class IncidenteRestController {
     @PostMapping("/incidentes")
     public ResponseEntity<IncidenteResponseDTO> create(@RequestBody IncidenteDTO dto) {
 
-        if (dto.getTipo() == null || dto.getTipo().isBlank()) {
+        if (dto == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payload vacío");
+        }
+        if (safeTrim(dto.getTipo()) == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El tipo de incidente es obligatorio");
         }
 
         try {
             // =========================================================
-            // 1) VALIDAR QUE EL ANÁLISIS IA EXISTA
-            //    - Si no hay aiPrioridad o aiPosibleFalso => NO GUARDAR
-            //    - Mensaje único: "No se realizó el análisis sin conexión."
+            // ✅ Idempotencia (CASO A): evita duplicados por reintentos
             // =========================================================
-            if (dto.getAiPrioridad() == null || dto.getAiPosibleFalso() == null) {
-                throw new ResponseStatusException(
-                        HttpStatus.UNPROCESSABLE_ENTITY,
-                        "No se realizó el análisis sin conexión."
-                );
+            final String clientGeneratedId = safeTrim(dto.getClientGeneratedId());
+            if (clientGeneratedId != null) {
+                Incidente existente = incidenteService.findByClientGeneratedId(clientGeneratedId);
+                if (existente != null) {
+                    // Ya existe: devolverlo sin reenviar notificaciones/SMS
+                    return ResponseEntity.ok(new IncidenteResponseDTO(existente));
+                }
             }
 
-            // Normalizar valores IA
-            final boolean posibleFalso = Boolean.TRUE.equals(dto.getAiPosibleFalso());
-            final String aiPrioridad = normalize(dto.getAiPrioridad());
+            // =========================================================
+            // ✅ DIRECTO SIN IA: tipos que empiezan con SOS_ o DIRECTO_
+            // =========================================================
+            final String tipoReq = dto.getTipo().trim().toUpperCase();
+            final boolean esDirecto = tipoReq.startsWith("SOS_") || tipoReq.startsWith("DIRECTO_");
 
             // =========================================================
-            // 2) FILTRO: SI IA MARCA POSIBLE FALSO O PRIORIDAD BAJA => NO GUARDAR
+            // ✅ VALIDAR IA SOLO SI NO ES DIRECTO
             // =========================================================
-            if (posibleFalso || "BAJA".equalsIgnoreCase(aiPrioridad)) {
-                throw new ResponseStatusException(
-                        HttpStatus.UNPROCESSABLE_ENTITY,
-                        "No se realizó el análisis sin conexión."
-                );
+            if (!esDirecto) {
+                if (dto.getAiPrioridad() == null || dto.getAiPosibleFalso() == null) {
+                    throw new ResponseStatusException(
+                            HttpStatus.UNPROCESSABLE_ENTITY,
+                            "Falta análisis IA (aiPrioridad/aiPosibleFalso)"
+                    );
+                }
+
+                final boolean posibleFalso = Boolean.TRUE.equals(dto.getAiPosibleFalso());
+                final String aiPrioridad = normalize(dto.getAiPrioridad());
+
+                if (posibleFalso || "BAJA".equalsIgnoreCase(aiPrioridad)) {
+                    throw new ResponseStatusException(
+                            HttpStatus.UNPROCESSABLE_ENTITY,
+                            "Incidente bloqueado por IA (posible falso o prioridad BAJA)"
+                    );
+                }
             }
 
             Incidente incidente = new Incidente();
@@ -104,17 +120,19 @@ public class IncidenteRestController {
             incidente.setTipo(dto.getTipo());
             incidente.setDescripcion(dto.getDescripcion());
 
-            // Medios adjuntos
             incidente.setImagenUrl(dto.getImagenUrl());
             incidente.setVideoUrl(dto.getVideoUrl());
             incidente.setAudioUrl(dto.getAudioUrl());
 
-            // Prioridad final (IA > manual > ALTA por defecto)
-            String prioridadFinal =
-                    dto.getAiPrioridad() != null ? dto.getAiPrioridad()
-                    : (dto.getNivelPrioridad() != null ? dto.getNivelPrioridad()
-                    : "ALTA");
-
+            // ================= PRIORIDAD FINAL =================
+            String prioridadFinal;
+            if (esDirecto) {
+                prioridadFinal = (safeTrim(dto.getNivelPrioridad()) != null) ? dto.getNivelPrioridad() : "ALTA";
+            } else {
+                prioridadFinal = (safeTrim(dto.getAiPrioridad()) != null)
+                        ? dto.getAiPrioridad()
+                        : (safeTrim(dto.getNivelPrioridad()) != null ? dto.getNivelPrioridad() : "ALTA");
+            }
             incidente.setNivelPrioridad(prioridadFinal);
 
             // ================= UBICACIÓN =================
@@ -125,62 +143,62 @@ public class IncidenteRestController {
 
             // ================= USUARIO =================
             Long usuarioId = extractUsuarioId(dto);
-            Usuario usuario = null;
-
-            if (usuarioId != null) {
-                usuario = usuarioService.findById(usuarioId);
-                if (usuario == null) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Usuario no encontrado");
-                }
-                incidente.setUsuario(usuario);
+            if (usuarioId == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "usuarioId es obligatorio");
             }
+            Usuario usuario = usuarioService.findById(usuarioId);
+            if (usuario == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Usuario no encontrado");
+            }
+            incidente.setUsuario(usuario);
 
             // ================= COMUNIDAD =================
             Long comunidadId = extractComunidadId(dto);
-            Comunidad comunidad = null;
-
             if (comunidadId != null) {
-                comunidad = comunidadService.findById(comunidadId);
+                Comunidad comunidad = comunidadService.findById(comunidadId);
                 if (comunidad == null) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Comunidad no encontrada");
                 }
                 incidente.setComunidad(comunidad);
             }
 
-            // Fechas
-            incidente.setFechaCreacion(OffsetDateTime.now());
-            incidente.setEstado("pendiente");
+            // ================= OFFLINE / SYNC (CASO A) =================
+            // (estos setters existen si aplicas el cambio en entidad/BD)
+            incidente.setClientGeneratedId(clientGeneratedId);
+            incidente.setCanalEnvio(safeTrim(dto.getCanalEnvio())); // ONLINE | OFFLINE_SMS | OFFLINE_QUEUE
+            incidente.setSmsEnviadoPorCliente(Boolean.TRUE.equals(dto.getSmsEnviadoPorCliente()));
 
-            // ================= DATOS IA =================
-            incidente.setAiCategoria(dto.getAiCategoria());
-            incidente.setAiPrioridad(dto.getAiPrioridad());
-            incidente.setAiPosibleFalso(dto.getAiPosibleFalso());
-            incidente.setAiConfianza(dto.getAiConfianza());
-            incidente.setAiMotivos(dto.getAiMotivos());
-            incidente.setAiRiesgos(dto.getAiRiesgos());
-            incidente.setAiAccionRecomendada(dto.getAiAccionRecomendada());
-            incidente.setAiAnalizadoEn(OffsetDateTime.now());
+            // ================= FECHAS / ESTADO =================
+            incidente.setFechaCreacion(OffsetDateTime.now());
+            incidente.setEstado("PENDIENTE");
+
+            // ================= DATOS IA (solo si NO es directo) =================
+            if (!esDirecto) {
+                incidente.setAiCategoria(dto.getAiCategoria());
+                incidente.setAiPrioridad(dto.getAiPrioridad());
+                incidente.setAiPosibleFalso(dto.getAiPosibleFalso());
+                incidente.setAiConfianza(dto.getAiConfianza());
+                incidente.setAiMotivos(dto.getAiMotivos());
+                incidente.setAiRiesgos(dto.getAiRiesgos());
+                incidente.setAiAccionRecomendada(dto.getAiAccionRecomendada());
+                incidente.setAiAnalizadoEn(OffsetDateTime.now());
+            }
 
             // ================= GUARDAR =================
             Incidente guardado = incidenteService.save(incidente);
 
-            // =========================================================
-            // PUSH NOTIFICATION (comunidad / vecinos)
-            // =========================================================
+            // ================= PUSH =================
             notificacionPushService.notificarIncidente(
                     guardado,
                     usuario,
                     resolveTipoNotificacion(dto)
             );
 
-            // =========================================================
-            // ✅ SMS A CONTACTOS DE EMERGENCIA DEL USUARIO (ASYNC)
-            // =========================================================
-            if (usuario != null && usuario.getId() != null) {
-                alertaSmsService.enviarSmsAContactosDelUsuario(
-                        usuario.getId(),
-                        guardado
-                );
+            // ================= SMS A CONTACTOS =================
+            // ✅ si el cliente ya envió SMS offline, el backend no debe duplicar
+            final boolean smsYaEnviadoCliente = Boolean.TRUE.equals(dto.getSmsEnviadoPorCliente());
+            if (!smsYaEnviadoCliente) {
+                alertaSmsService.enviarSmsAContactosDelUsuario(usuario.getId(), guardado);
             }
 
             return ResponseEntity.status(HttpStatus.CREATED)
@@ -211,7 +229,6 @@ public class IncidenteRestController {
 
         if (dto.getImagenUrl() != null) actual.setImagenUrl(dto.getImagenUrl());
         if (dto.getVideoUrl() != null) actual.setVideoUrl(dto.getVideoUrl());
-        if (dto.getAudioUrl() != null) actual.setVideoUrl(dto.getVideoUrl());
         if (dto.getAudioUrl() != null) actual.setAudioUrl(dto.getAudioUrl());
 
         if (dto.getLat() != null && dto.getLng() != null) {
@@ -244,7 +261,7 @@ public class IncidenteRestController {
             }
         }
 
-        if ("resuelto".equalsIgnoreCase(estado)) {
+        if ("RESUELTO".equalsIgnoreCase(estado)) {
             incidente.setFechaResolucion(OffsetDateTime.now());
         }
 
@@ -291,5 +308,11 @@ public class IncidenteRestController {
 
     private static String normalize(String s) {
         return (s == null) ? null : s.trim().toUpperCase();
+    }
+
+    private static String safeTrim(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
     }
 }

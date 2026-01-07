@@ -1,9 +1,9 @@
 package com.ista.springboot.web.app.dto;
 
+import java.time.OffsetDateTime;
 
 import com.ista.springboot.web.app.models.entity.Usuario;
 import com.ista.springboot.web.app.models.entity.UsuarioComunidad;
-import java.time.OffsetDateTime;
 
 public class UsuarioDTO {
     private Long id;
@@ -15,18 +15,23 @@ public class UsuarioDTO {
     private OffsetDateTime fechaRegistro;
     private OffsetDateTime ultimoAcceso;
     private Boolean activo;
-    
+
     // Datos de la comunidad (sin circular reference)
     private Long comunidadId;
     private String comunidadNombre;
-    private String rol;
-    private String estadoEnComunidad;
 
-    // Constructor vacío
+    // ✅ Campos controlados
+    private String rol;               // ADMIN | USER | ...
+    private String estadoEnComunidad; // ACTIVO | BLOQUEADO | ...
+
+    // ✅ EMAIL ADMIN ÚNICO
+    private static final String ADMIN_EMAIL = "safezonecomunity@gmail.com";
+
     public UsuarioDTO() {}
 
-    // Constructor desde Usuario + UsuarioComunidad
     public UsuarioDTO(Usuario usuario, UsuarioComunidad usuarioComunidad) {
+        if (usuario == null) return;
+
         this.id = usuario.getId();
         this.nombre = usuario.getNombre();
         this.apellido = usuario.getApellido();
@@ -36,26 +41,48 @@ public class UsuarioDTO {
         this.fechaRegistro = usuario.getFechaRegistro();
         this.ultimoAcceso = usuario.getUltimoAcceso();
         this.activo = usuario.getActivo();
-        
-        if (usuarioComunidad != null) {
+
+        // =========================
+        //  Comunidad (si existe)
+        // =========================
+        if (usuarioComunidad != null && usuarioComunidad.getComunidad() != null) {
             this.comunidadId = usuarioComunidad.getComunidad().getId();
             this.comunidadNombre = usuarioComunidad.getComunidad().getNombre();
-            this.rol = usuarioComunidad.getRol();
-            this.estadoEnComunidad = usuarioComunidad.getEstado();
+        }
+
+        // =========================
+        //  Rol / Estado (defaults)
+        // =========================
+        String rolBase = "USER";
+        String estadoBase = null;
+
+        if (usuarioComunidad != null) {
+            if (usuarioComunidad.getRol() != null && !usuarioComunidad.getRol().isBlank()) {
+                rolBase = usuarioComunidad.getRol().trim();
+            }
+            if (usuarioComunidad.getEstado() != null && !usuarioComunidad.getEstado().isBlank()) {
+                estadoBase = usuarioComunidad.getEstado().trim();
+            } else {
+                estadoBase = "ACTIVO";
+            }
+        }
+
+        // =========================
+        //  ✅ ADMIN ÚNICO POR EMAIL
+        // =========================
+        if (this.email != null && this.email.trim().equalsIgnoreCase(ADMIN_EMAIL)) {
+            this.rol = "ADMIN";
+            // Si quieres garantizar estado cuando es admin:
+            if (estadoBase == null) estadoBase = "ACTIVO";
+            this.estadoEnComunidad = estadoBase;
+        } else {
+            this.rol = rolBase;
+            this.estadoEnComunidad = estadoBase; // puede ser null si no hay comunidad
         }
     }
 
-    // Constructor simplificado solo con Usuario
     public UsuarioDTO(Usuario usuario) {
-        this.id = usuario.getId();
-        this.nombre = usuario.getNombre();
-        this.apellido = usuario.getApellido();
-        this.email = usuario.getEmail();
-        this.telefono = usuario.getTelefono();
-        this.fotoUrl = usuario.getFotoUrl();
-        this.fechaRegistro = usuario.getFechaRegistro();
-        this.ultimoAcceso = usuario.getUltimoAcceso();
-        this.activo = usuario.getActivo();
+        this(usuario, null);
     }
 
     // Getters y Setters
@@ -83,7 +110,6 @@ public class UsuarioDTO {
     public OffsetDateTime getUltimoAcceso() { return ultimoAcceso; }
     public void setUltimoAcceso(OffsetDateTime ultimoAcceso) { this.ultimoAcceso = ultimoAcceso; }
 
-    
     public Boolean getActivo() { return activo; }
     public void setActivo(Boolean activo) { this.activo = activo; }
 

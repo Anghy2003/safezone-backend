@@ -16,6 +16,14 @@ import com.ista.springboot.web.app.models.entity.UsuarioComunidad;
 @Service
 public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
 
+    // ✅ Admin “fijo” por correo
+    private static final String ADMIN_EMAIL = "safezonecomunity@gmail.com";
+
+    // ✅ ESTÁNDAR BD (minúsculas)
+    private static final String ROL_ADMIN = "admin";
+    private static final String ROL_USER  = "usuario"; // o "vecino" si decides mantenerlo
+    private static final String ESTADO_ACTIVO = "activo";
+
     @Autowired
     private IUsuarioComunidad usuarioComunidadDao;
 
@@ -23,7 +31,11 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
     private IComunidadService comunidadService;
 
     @Autowired
-    private IUsuario usuarioDao; // DAO de Usuario
+    private IUsuario usuarioDao;
+
+    private boolean isAdminEmail(String email) {
+        return email != null && email.trim().equalsIgnoreCase(ADMIN_EMAIL);
+    }
 
     @Override
     @Transactional
@@ -34,10 +46,8 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Usuario no encontrado"));
 
-        // 2) Verificar si YA pertenece a alguna comunidad
-        //    Regla: un usuario solo puede estar en UNA comunidad, nunca en dos.
+        // 2) Regla: un usuario solo puede estar en UNA comunidad
         if (usuarioComunidadDao.existsByUsuarioId(usuario.getId())) {
-            // Puedes recuperar la relación actual para dar más contexto
             UsuarioComunidad actual = usuarioComunidadDao
                     .findFirstByUsuarioId(usuario.getId())
                     .orElse(null);
@@ -68,17 +78,39 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
                     HttpStatus.BAD_REQUEST, "La comunidad aún no está activa");
         }
 
-        // 5) Crear la relación usuario-comunidad (como vecino activo)
+        // 5) Resolver rol automáticamente
+        final boolean esAdmin = isAdminEmail(usuario.getEmail());
+        final String rolAsignado = esAdmin ? ROL_ADMIN : ROL_USER;
+
+        // 6) Admin único GLOBAL:
+        // Si este usuario va a ser admin, verificamos si ya existe un admin diferente.
+        if (ROL_ADMIN.equalsIgnoreCase(rolAsignado)) {
+            UsuarioComunidad adminActual = usuarioComunidadDao
+                    .findFirstByRolIgnoreCase(ROL_ADMIN)
+                    .orElse(null);
+
+            if (adminActual != null
+                    && adminActual.getUsuario() != null
+                    && !adminActual.getUsuario().getId().equals(usuario.getId())) {
+
+                String extra = " (admin actual: " + adminActual.getUsuario().getEmail() + ")";
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "Ya existe un admin global en el sistema" + extra
+                );
+            }
+        }
+
+        // 7) Crear relación usuario-comunidad
         UsuarioComunidad uc = new UsuarioComunidad();
         uc.setUsuario(usuario);
         uc.setComunidad(comunidad);
-        uc.setRol("vecino");
-        uc.setEstado("activo");
+        uc.setRol(rolAsignado);         // ✅ "admin" o "usuario"
+        uc.setEstado(ESTADO_ACTIVO);    // ✅ "activo"
 
         return usuarioComunidadDao.save(uc);
     }
 
-    // (opcional) método helper para consultar la comunidad actual del usuario
     @Transactional(readOnly = true)
     public UsuarioComunidad obtenerComunidadActual(Long usuarioId) {
         return usuarioComunidadDao.findFirstByUsuarioId(usuarioId).orElse(null);

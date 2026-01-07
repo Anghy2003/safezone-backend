@@ -17,21 +17,57 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.ista.springboot.web.app.dto.ComunidadDTO;
 import com.ista.springboot.web.app.dto.ComunidadSolicitudDTO;
+import com.ista.springboot.web.app.models.dao.IUsuario;
+import com.ista.springboot.web.app.models.dao.IUsuarioComunidad;
 import com.ista.springboot.web.app.models.entity.Comunidad;
+import com.ista.springboot.web.app.models.entity.Usuario;
 import com.ista.springboot.web.app.models.entity.UsuarioComunidad;
 import com.ista.springboot.web.app.models.services.IComunidadService;
 import com.ista.springboot.web.app.models.services.IUsuarioComunidadService;
 
-@CrossOrigin(origins = { "http://localhost:4200", "http://localhost:5173" })
+@CrossOrigin(origins = { "http://localhost:5173" })
 @RestController
 @RequestMapping("/api")
 public class ComunidadRestController {
+
+    private static final String ADMIN_EMAIL = "safezonecomunity@gmail.com";
+    private static final String ROL_ADMIN = "ADMIN";
 
     @Autowired
     private IComunidadService comunidadService;
 
     @Autowired
     private IUsuarioComunidadService usuarioComunidadService;
+
+    // ✅ para validar rol/admin
+    @Autowired
+    private IUsuarioComunidad usuarioComunidadDao;
+
+    @Autowired
+    private IUsuario usuarioDao;
+
+    // ===================== HELPERS =====================
+    private void requireAdmin(Long usuarioId) {
+        if (usuarioId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "usuarioId requerido");
+        }
+
+        Usuario u = usuarioDao.findById(usuarioId).orElse(null);
+        if (u == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Usuario no encontrado");
+        }
+
+        // ✅ 1) correo exacto del admin
+        if (u.getEmail() == null || !u.getEmail().trim().equalsIgnoreCase(ADMIN_EMAIL)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo el ADMIN puede realizar esta acción");
+        }
+
+        // ✅ 2) rol ADMIN en la relación usuario_comunidad (consistente con tu DTO)
+        boolean esAdmin = usuarioComunidadDao.existsByUsuarioIdAndRolIgnoreCase(usuarioId, ROL_ADMIN);
+        if (!esAdmin) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Rol insuficiente: se requiere ADMIN");
+        }
+    }
 
     // ===================== LISTAR TODAS =====================
     @GetMapping("/comunidades")
@@ -51,16 +87,20 @@ public class ComunidadRestController {
     }
 
     // ===================== CREAR (solo backend/admin) =====================
-    @PostMapping("/comunidades")
+    // ✅ si lo vas a usar desde web/móvil, protégelo igual:
+    @PostMapping("/comunidades/usuario/{usuarioId}")
     @ResponseStatus(HttpStatus.CREATED)
-    public ComunidadDTO create(@RequestBody Comunidad comunidad) {
+    public ComunidadDTO create(@RequestBody Comunidad comunidad, @PathVariable Long usuarioId) {
+        requireAdmin(usuarioId);
         Comunidad guardada = comunidadService.save(comunidad);
         return new ComunidadDTO(guardada);
     }
 
     // ===================== ACTUALIZAR =====================
-    @PutMapping("/comunidades/{id}")
-    public ComunidadDTO update(@RequestBody Comunidad comunidad, @PathVariable Long id) {
+    @PutMapping("/comunidades/{id}/usuario/{usuarioId}")
+    public ComunidadDTO update(@RequestBody Comunidad comunidad, @PathVariable Long id, @PathVariable Long usuarioId) {
+        requireAdmin(usuarioId);
+
         Comunidad actual = comunidadService.findById(id);
         if (actual == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Comunidad no encontrada");
@@ -71,9 +111,11 @@ public class ComunidadRestController {
     }
 
     // ===================== ELIMINAR =====================
-    @DeleteMapping("/comunidades/{id}")
+    @DeleteMapping("/comunidades/{id}/usuario/{usuarioId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable Long id) {
+    public void delete(@PathVariable Long id, @PathVariable Long usuarioId) {
+        requireAdmin(usuarioId);
+
         Comunidad comunidad = comunidadService.findById(id);
         if (comunidad == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Comunidad no encontrada");
@@ -108,7 +150,7 @@ public class ComunidadRestController {
         );
     }
 
-    // ===================== SOLICITAR CREAR COMUNIDAD (foto + ubicación + radio) =====================
+    // ===================== SOLICITAR CREAR COMUNIDAD =====================
     @PostMapping("/comunidades/solicitar")
     @ResponseStatus(HttpStatus.CREATED)
     public ComunidadDTO solicitarComunidad(@RequestBody ComunidadSolicitudDTO req) {
@@ -134,11 +176,9 @@ public class ComunidadRestController {
         comunidad.setDireccion(req.getDireccion().trim());
         comunidad.setFotoUrl(req.getFotoUrl().trim());
 
-        // Radio: si no viene, default alto (ej. 5 km)
         BigDecimal radio = (req.getRadio() != null) ? req.getRadio() : BigDecimal.valueOf(5.00);
         comunidad.setRadioKm(radio);
 
-        // Point (lng, lat) SRID 4326
         GeometryFactory gf = new GeometryFactory(new PrecisionModel(), 4326);
         Point p = gf.createPoint(new Coordinate(req.getLng(), req.getLat()));
         p.setSRID(4326);
@@ -148,9 +188,11 @@ public class ComunidadRestController {
         return new ComunidadDTO(guardada);
     }
 
-    // ===================== APROBAR COMUNIDAD (genera código + SMS) =====================
-    @PostMapping("/comunidades/{id}/aprobar")
-    public ComunidadDTO aprobarComunidad(@PathVariable Long id) {
+    // ===================== APROBAR COMUNIDAD (ADMIN) =====================
+    @PostMapping("/comunidades/{id}/aprobar/usuario/{usuarioId}")
+    public ComunidadDTO aprobarComunidad(@PathVariable Long id, @PathVariable Long usuarioId) {
+        requireAdmin(usuarioId);
+
         Comunidad aprobada = comunidadService.aprobarComunidad(id);
         return new ComunidadDTO(aprobada);
     }

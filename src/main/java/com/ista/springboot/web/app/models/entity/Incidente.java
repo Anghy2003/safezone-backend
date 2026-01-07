@@ -7,6 +7,7 @@ import org.locationtech.jts.geom.Point;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import jakarta.persistence.*;
 
 @JsonIgnoreProperties({
@@ -14,8 +15,17 @@ import jakarta.persistence.*;
         "handler"
 })
 @Entity
-@Table(name = "incidente")
+@Table(
+    name = "incidente",
+    indexes = {
+        @Index(name = "idx_incidente_client_generated_id", columnList = "client_generated_id"),
+        @Index(name = "idx_incidente_usuario", columnList = "usuario_id"),
+        @Index(name = "idx_incidente_comunidad", columnList = "comunidad_id")
+    }
+)
 public class Incidente implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -110,9 +120,7 @@ public class Incidente implements Serializable {
     @Column(name = "fecha_resolucion")
     private OffsetDateTime fechaResolucion;
 
-    private static final long serialVersionUID = 1L;
-    
- // ===================== IA (xAI / Grok) =====================
+    // ===================== IA (xAI / Grok) =====================
 
     @Column(name = "ai_categoria", length = 80)
     private String aiCategoria;
@@ -138,7 +146,30 @@ public class Incidente implements Serializable {
     @Column(name = "ai_analizado_en")
     private OffsetDateTime aiAnalizadoEn;
 
-    // ===================== GETTERS & SETTERS ===================== //
+    // ===================== OFFLINE / SYNC (CASO A) =====================
+
+    /**
+     * Id generado por el cliente (UUID) para evitar duplicados en reintentos.
+     * Recomendado: UNIQUE en BD.
+     */
+    @Column(name = "client_generated_id", length = 80)
+    private String clientGeneratedId;
+
+
+    /**
+     * ONLINE | OFFLINE_SMS | OFFLINE_QUEUE
+     */
+    @Column(name = "canal_envio", length = 30)
+    private String canalEnvio;
+
+    /**
+     * true si el cliente ya envió SMS cuando no había internet.
+     * Así el backend NO reenvía SMS a contactos.
+     */
+    @Column(name = "sms_enviado_por_cliente")
+    private Boolean smsEnviadoPorCliente = false;
+
+    // ===================== GETTERS & SETTERS =====================
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -181,6 +212,7 @@ public class Incidente implements Serializable {
 
     public OffsetDateTime getFechaResolucion() { return fechaResolucion; }
     public void setFechaResolucion(OffsetDateTime fechaResolucion) { this.fechaResolucion = fechaResolucion; }
+
     public String getAiCategoria() { return aiCategoria; }
     public void setAiCategoria(String aiCategoria) { this.aiCategoria = aiCategoria; }
 
@@ -205,4 +237,12 @@ public class Incidente implements Serializable {
     public OffsetDateTime getAiAnalizadoEn() { return aiAnalizadoEn; }
     public void setAiAnalizadoEn(OffsetDateTime aiAnalizadoEn) { this.aiAnalizadoEn = aiAnalizadoEn; }
 
+    public String getClientGeneratedId() { return clientGeneratedId; }
+    public void setClientGeneratedId(String clientGeneratedId) { this.clientGeneratedId = clientGeneratedId; }
+
+    public String getCanalEnvio() { return canalEnvio; }
+    public void setCanalEnvio(String canalEnvio) { this.canalEnvio = canalEnvio; }
+
+    public Boolean getSmsEnviadoPorCliente() { return smsEnviadoPorCliente; }
+    public void setSmsEnviadoPorCliente(Boolean smsEnviadoPorCliente) { this.smsEnviadoPorCliente = smsEnviadoPorCliente; }
 }
