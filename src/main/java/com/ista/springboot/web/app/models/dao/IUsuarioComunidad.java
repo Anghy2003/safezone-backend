@@ -1,21 +1,22 @@
 package com.ista.springboot.web.app.models.dao;
 
-import java.util.Optional;
 import java.util.List;
+import java.util.Optional;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import com.ista.springboot.web.app.models.entity.UsuarioComunidad;
 
 public interface IUsuarioComunidad extends JpaRepository<UsuarioComunidad, Long> {
 
-    // Contar miembros por comunidad
     long countByComunidadId(Long comunidadId);
 
-    // Regla: usuario solo puede estar en UNA comunidad
     boolean existsByUsuarioId(Long usuarioId);
 
     boolean existsByUsuarioIdAndComunidadId(Long usuarioId, Long comunidadId);
+
+    boolean existsByUsuarioIdAndComunidadIdAndEstadoIgnoreCase(Long usuarioId, Long comunidadId, String estado);
 
     Optional<UsuarioComunidad> findByUsuarioIdAndComunidadId(Long usuarioId, Long comunidadId);
 
@@ -23,11 +24,20 @@ public interface IUsuarioComunidad extends JpaRepository<UsuarioComunidad, Long>
 
     List<UsuarioComunidad> findByUsuarioId(Long usuarioId);
 
-    // Admin único global (en toda la tabla)
+    // === Roles ===
     boolean existsByRolIgnoreCase(String rol);
-
     Optional<UsuarioComunidad> findFirstByRolIgnoreCase(String rol);
-
-    // Verificar si ESTE usuario es ADMIN
     boolean existsByUsuarioIdAndRolIgnoreCase(Long usuarioId, String rol);
+
+    boolean existsByUsuarioIdAndComunidadIdAndRolIgnoreCaseAndEstadoIgnoreCase(
+            Long usuarioId, Long comunidadId, String rol, String estado
+    );
+
+    // === Solicitudes pendientes y activos por comunidad ===
+    @EntityGraph(attributePaths = {"usuario", "comunidad"})
+    List<UsuarioComunidad> findByComunidadIdAndEstadoIgnoreCase(Long comunidadId, String estado);
+
+    // === Mis comunidades activas ===
+    @EntityGraph(attributePaths = {"comunidad"})
+    List<UsuarioComunidad> findByUsuarioIdAndEstadoIgnoreCase(Long usuarioId, String estado);
 }

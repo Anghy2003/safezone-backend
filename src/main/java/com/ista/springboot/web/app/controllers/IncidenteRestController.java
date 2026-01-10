@@ -99,7 +99,9 @@ public class IncidenteRestController {
                 if (dto.getAiPrioridad() == null || dto.getAiPosibleFalso() == null) {
                     throw new ResponseStatusException(
                             HttpStatus.UNPROCESSABLE_ENTITY,
-                            "Falta análisis IA (aiPrioridad/aiPosibleFalso)"
+                            "Reporte marcado para revisión (validación de seguridad)"
+
+
                     );
                 }
 
@@ -109,7 +111,7 @@ public class IncidenteRestController {
                 if (posibleFalso || "BAJA".equalsIgnoreCase(aiPrioridad)) {
                     throw new ResponseStatusException(
                             HttpStatus.UNPROCESSABLE_ENTITY,
-                            "Incidente bloqueado por IA (posible falso o prioridad BAJA)"
+                            "Incidente bloqueado por ser (posible falso o prioridad BAJA)"
                     );
                 }
             }

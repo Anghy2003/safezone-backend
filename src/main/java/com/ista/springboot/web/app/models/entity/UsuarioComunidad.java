@@ -21,10 +21,10 @@ public class UsuarioComunidad implements Serializable {
     // =====================================================
     // 🔹 USUARIO
     // =====================================================
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "usuario_id", nullable = false)
     @JsonIgnoreProperties({
-        "usuarioComunidades",  // evita ciclos usuario ⇄ usuarioComunidad
+        "usuarioComunidades",
         "passwordHash"
     })
     private Usuario usuario;
@@ -32,10 +32,10 @@ public class UsuarioComunidad implements Serializable {
     // =====================================================
     // 🔹 COMUNIDAD
     // =====================================================
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "comunidad_id", nullable = false)
     @JsonIgnoreProperties({
-        "usuarioComunidades", // evita ciclo comunidad ⇄ usuarioComunidad
+        "usuarioComunidades",
         "usuarios",
         "incidentes"
     })
@@ -44,11 +44,14 @@ public class UsuarioComunidad implements Serializable {
     // =====================================================
     // 🔹 ROL
     // =====================================================
-    @Column(length = 30)
-    private String rol = "vecino";
+    // Alineado a tu service: super_admin / admin_comunidad / usuario
+    @Column(length = 30, nullable = false)
+    private String rol = "usuario";
 
-    // 🔹 Estado: pendiente / activo / expulsado
-    @Column(length = 30)
+    // =====================================================
+    // 🔹 ESTADO: pendiente / activo / expulsado
+    // =====================================================
+    @Column(length = 30, nullable = false)
     private String estado = "pendiente";
 
     // =====================================================
@@ -72,6 +75,12 @@ public class UsuarioComunidad implements Serializable {
     public void prePersist() {
         if (fechaUnion == null) {
             fechaUnion = OffsetDateTime.now();
+        }
+        if (rol == null || rol.trim().isEmpty()) {
+            rol = "usuario";
+        }
+        if (estado == null || estado.trim().isEmpty()) {
+            estado = "pendiente";
         }
     }
 
