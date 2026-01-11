@@ -21,4 +21,6 @@ public interface IUsuarioComunidadService {
     Map<String, Object> aprobarSolicitudYGenerarToken(Long adminId, Long comunidadId, Long usuarioId, Integer horasExpira);
 
     void rechazarSolicitud(Long adminId, Long comunidadId, Long usuarioId);
+    UsuarioComunidad aprobarSolicitud(Long adminId, Long comunidadId, Long usuarioId);
+
 }

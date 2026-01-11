@@ -16,7 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.ista.springboot.web.app.dto.ComunidadDTO;
 import com.ista.springboot.web.app.dto.ComunidadSolicitudDTO;
-import com.ista.springboot.web.app.dto.SolicitudJoinDTO; // ✅ Opción B (DTO)
+import com.ista.springboot.web.app.dto.SolicitudJoinDTO;
 import com.ista.springboot.web.app.models.dao.IUsuario;
 import com.ista.springboot.web.app.models.dao.IUsuarioComunidad;
 import com.ista.springboot.web.app.models.entity.Comunidad;
@@ -125,7 +125,7 @@ public class ComunidadRestController {
         );
     }
 
-    // ===================== UNIR POR TOKEN =====================
+    // ===================== UNIR POR TOKEN (LEGACY) =====================
     @PostMapping("/comunidades/unirse-token")
     public Map<String, Object> unirPorToken(@RequestBody Map<String, Object> body) {
         Long usuarioId = body.get("usuarioId") == null ? null : Long.valueOf(body.get("usuarioId").toString());
@@ -222,7 +222,7 @@ public class ComunidadRestController {
     // ===================== NUEVO FLUJO: SOLICITAR / APROBAR =====================
     // =====================================================================
 
-    // Usuario solicita unirse a comunidad (queda pendiente)
+    // Usuario solicita unirse a comunidad (queda pendiente + NOTIFICA ADMINS)
     @PostMapping("/comunidades/{comunidadId}/solicitar-unirse/usuario/{usuarioId}")
     public Map<String, Object> solicitarUnirse(@PathVariable Long comunidadId, @PathVariable Long usuarioId) {
         UsuarioComunidad uc = usuarioComunidadService.solicitarUnirse(usuarioId, comunidadId);
@@ -235,7 +235,7 @@ public class ComunidadRestController {
         );
     }
 
-    // ✅ Opción B: Admin lista solicitudes pendientes pero devolviendo DTO (no entidad JPA)
+    // Admin lista solicitudes pendientes
     @GetMapping("/comunidades/{comunidadId}/solicitudes/usuario/{adminId}")
     public List<SolicitudJoinDTO> listarSolicitudesPendientes(
             @PathVariable Long comunidadId,
@@ -247,29 +247,32 @@ public class ComunidadRestController {
                 .collect(Collectors.toList());
     }
 
-    // Admin aprueba solicitud -> genera token 1-uso
+    // ✅ NUEVO: Admin aprueba solicitud -> ACTIVA al usuario + NOTIFICA al usuario (SIN TOKEN)
     @PostMapping("/comunidades/{comunidadId}/solicitudes/{usuarioId}/aprobar/usuario/{adminId}")
     public Map<String, Object> aprobarSolicitud(
             @PathVariable Long comunidadId,
             @PathVariable Long usuarioId,
-            @PathVariable Long adminId,
-            @RequestBody(required = false) Map<String, Object> body
+            @PathVariable Long adminId
     ) {
-        Integer horasExpira = 24;
-        if (body != null && body.get("horasExpira") != null) {
-            horasExpira = Integer.valueOf(body.get("horasExpira").toString());
-        }
+        UsuarioComunidad uc = usuarioComunidadService.aprobarSolicitud(adminId, comunidadId, usuarioId);
 
-        return usuarioComunidadService.aprobarSolicitudYGenerarToken(adminId, comunidadId, usuarioId, horasExpira);
+        return Map.of(
+            "success", true,
+            "comunidadId", comunidadId,
+            "usuarioId", usuarioId,
+            "estado", uc.getEstado(),
+            "rol", uc.getRol()
+        );
     }
 
-    // Admin rechaza solicitud
+    // Admin rechaza solicitud -> marca expulsado/rechazado + NOTIFICA al usuario
     @PostMapping("/comunidades/{comunidadId}/solicitudes/{usuarioId}/rechazar/usuario/{adminId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void rechazarSolicitud(@PathVariable Long comunidadId, @PathVariable Long usuarioId, @PathVariable Long adminId) {
         usuarioComunidadService.rechazarSolicitud(adminId, comunidadId, usuarioId);
     }
-    
+
+    // Mis comunidades
     @GetMapping("/usuarios/{usuarioId}/comunidades")
     public List<Map<String, Object>> misComunidades(@PathVariable Long usuarioId) {
 
@@ -299,6 +302,4 @@ public class ComunidadRestController {
             );
         }).toList();
     }
-
-
 }
