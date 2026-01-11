@@ -269,4 +269,36 @@ public class ComunidadRestController {
     public void rechazarSolicitud(@PathVariable Long comunidadId, @PathVariable Long usuarioId, @PathVariable Long adminId) {
         usuarioComunidadService.rechazarSolicitud(adminId, comunidadId, usuarioId);
     }
+    
+    @GetMapping("/usuarios/{usuarioId}/comunidades")
+    public List<Map<String, Object>> misComunidades(@PathVariable Long usuarioId) {
+
+        List<UsuarioComunidad> list = usuarioComunidadDao.findByUsuarioId(usuarioId);
+
+        return list.stream().map(uc -> {
+            Comunidad c = uc.getComunidad();
+            if (c == null || c.getId() == null) {
+                return Map.<String, Object>of(
+                    "estado", uc.getEstado(),
+                    "rol", uc.getRol(),
+                    "comunidad", Map.of()
+                );
+            }
+
+            long miembrosCount = usuarioComunidadDao.countByComunidadId(c.getId());
+
+            return Map.<String, Object>of(
+                "estado", uc.getEstado(),
+                "rol", uc.getRol(),
+                "comunidad", Map.of(
+                    "id", c.getId(),
+                    "nombre", c.getNombre(),
+                    "fotoUrl", c.getFotoUrl(),
+                    "miembrosCount", miembrosCount
+                )
+            );
+        }).toList();
+    }
+
+
 }
