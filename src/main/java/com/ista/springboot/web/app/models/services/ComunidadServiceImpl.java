@@ -20,21 +20,16 @@ import com.ista.springboot.web.app.repository.ComunidadFetchRepository;
 @Service
 public class ComunidadServiceImpl implements IComunidadService {
 
-    @Autowired
-    private IComunidad comunidadDao;
+    @Autowired private IComunidad comunidadDao;
+    @Autowired private IUsuarioComunidad usuarioComunidadDao;
+    @Autowired private ComunidadFetchRepository comunidadFetchRepository;
+    @Autowired private IUsuario usuarioDao;
 
-    @Autowired
-    private IUsuarioComunidad usuarioComunidadDao;
+    // ✅ FCM (para notificar “ya eres admin”)
+    @Autowired(required = false)
+    private FirebaseMessagingService firebaseMessagingService;
 
-    @Autowired
-    private ComunidadFetchRepository comunidadFetchRepository;
-
-    @Autowired
-    private IUsuario usuarioDao;
-
-    @Autowired
-    private TwilioSmsService smsService;
-
+    // ===================== LISTAR =====================
     @Override
     public List<Comunidad> findAll() {
         List<Comunidad> comunidades = (List<Comunidad>) comunidadDao.findAll();
@@ -60,11 +55,13 @@ public class ComunidadServiceImpl implements IComunidadService {
         return comunidadDao.save(comunidad);
     }
 
+    // ✅ Eliminado lógico recomendado desde controller (suspender)
     @Override
     public void delete(Long id) {
         comunidadDao.deleteById(id);
     }
 
+    // ✅ Solo referencial (no para unirse)
     @Override
     public Comunidad findByCodigoAcceso(String codigoAcceso) {
         Comunidad comunidad = comunidadDao.findByCodigoAcceso(codigoAcceso);
@@ -85,19 +82,22 @@ public class ComunidadServiceImpl implements IComunidadService {
         return comunidades;
     }
 
-    // SOLICITAR comunidad
+    // ===================== SOLICITAR =====================
     @Override
     public Comunidad solicitarComunidad(Comunidad comunidad, Long usuarioId) {
         comunidad.setId(null);
         comunidad.setEstado(EstadoComunidad.SOLICITADA);
         comunidad.setActiva(false);
+
+        // ✅ Código NO se usa aquí. Se genera al aprobar (solo referencial).
         comunidad.setCodigoAcceso(null);
+
         comunidad.setSolicitadaPorUsuarioId(usuarioId);
         return comunidadDao.save(comunidad);
     }
 
-    // APROBAR comunidad
-    // ✅ CAMBIO MÍNIMO: al aprobar, el solicitante pasa a ser ADMIN de ESA comunidad
+    // ===================== APROBAR =====================
+    // ✅ Al aprobar: activa + genera código (referencial) + solicitante => admin_comunidad activo
     @Override
     @Transactional
     public Comunidad aprobarComunidad(Long comunidadId) {
@@ -109,77 +109,72 @@ public class ComunidadServiceImpl implements IComunidadService {
             throw new RuntimeException("La comunidad no está en estado SOLICITADA");
         }
 
+        // ✅ activar
         comunidad.setEstado(EstadoComunidad.ACTIVA);
         comunidad.setActiva(true);
-        comunidad.setCodigoAcceso(generarCodigo5());
+
+        // ✅ Código referencial (NO para unirse)
+        if (comunidad.getCodigoAcceso() == null || comunidad.getCodigoAcceso().isBlank()) {
+            comunidad.setCodigoAcceso(generarCodigo5());
+        }
 
         Comunidad guardada = comunidadDao.save(comunidad);
 
-        // ===================== ✅ CAMBIO MÍNIMO OBLIGATORIO =====================
+        // ✅ solicitante => admin_comunidad + activo (crear o actualizar)
         Long solicitanteId = guardada.getSolicitadaPorUsuarioId();
         if (solicitanteId != null) {
             Usuario solicitante = usuarioDao.findById(solicitanteId).orElse(null);
             if (solicitante != null) {
 
-                boolean yaExiste = usuarioComunidadDao.existsByUsuarioIdAndComunidadId(solicitanteId, guardada.getId());
+                UsuarioComunidad uc = usuarioComunidadDao
+                        .findByUsuarioIdAndComunidadId(solicitanteId, guardada.getId())
+                        .orElse(null);
 
-                if (!yaExiste) {
-                    UsuarioComunidad uc = new UsuarioComunidad();
+                if (uc == null) {
+                    uc = new UsuarioComunidad();
                     uc.setUsuario(solicitante);
                     uc.setComunidad(guardada);
-
-                    uc.setRol(UsuarioComunidadServiceImpl.ROL_ADMIN_COMUNIDAD);
-                    uc.setEstado(UsuarioComunidadServiceImpl.ESTADO_ACTIVO);
-
-                    // opcional (tu entity ya lo setea en @PrePersist, pero lo dejamos explícito)
-                    uc.setFechaUnion(OffsetDateTime.now());
-
-                    usuarioComunidadDao.save(uc);
                 }
+
+                // 🔥 CONSISTENCIA total con tu UsuarioComunidadServiceImpl
+                uc.setRol(UsuarioComunidadServiceImpl.ROL_ADMIN_COMUNIDAD);
+                uc.setEstado(UsuarioComunidadServiceImpl.ESTADO_ACTIVO);
+                uc.setFechaUnion(OffsetDateTime.now());
+
+                usuarioComunidadDao.save(uc);
+
+                // ✅ Notificar por FCM (si existe el bean)
+                notificarSolicitanteAprobacion(guardada, solicitante);
             }
         }
-        // ======================================================================
-
-        // ✅ SMS (puedes mantenerlo como fallback)
-        enviarSmsCodigoSiAplica(guardada);
 
         return guardada;
     }
 
-    private void enviarSmsCodigoSiAplica(Comunidad comunidad) {
-        Long solicitanteId = comunidad.getSolicitadaPorUsuarioId();
-        if (solicitanteId == null) return;
-
-        Usuario u = usuarioDao.findById(solicitanteId).orElse(null);
-        if (u == null) return;
-
-        String telefono = u.getTelefono();
-        if (telefono == null || telefono.trim().isEmpty()) return;
-
-        String to = normalizarE164Ecuador(telefono);
-
-        String msg = "SafeZone: Tu comunidad \"" + comunidad.getNombre()
-                + "\" fue aprobada. Tu código de acceso es: "
-                + comunidad.getCodigoAcceso()
-                + ". Compártelo con tus vecinos.";
-
+    private void notificarSolicitanteAprobacion(Comunidad comunidad, Usuario solicitante) {
         try {
-            smsService.enviarSms(to, msg);
-        } catch (Exception ex) {
-            System.out.println("No se pudo enviar SMS: " + ex.getMessage());
-        }
-    }
+            if (firebaseMessagingService == null) return;
+            if (solicitante == null || solicitante.getFcmToken() == null || solicitante.getFcmToken().isBlank()) return;
 
-    private String normalizarE164Ecuador(String input) {
-        String v = input.replace(" ", "").replace("-", "");
-        if (v.startsWith("+")) return v;
-        if (v.startsWith("09") && v.length() == 10) {
-            return "+593" + v.substring(1);
+            String titulo = "Comunidad aprobada";
+            String cuerpo  = "Tu comunidad \"" + comunidad.getNombre() + "\" fue aprobada. Ya eres administrador.";
+
+            java.util.Map<String, String> data = new java.util.HashMap<>();
+            data.put("tipoNotificacion", "COMMUNITY_APPROVED");
+            data.put("comunidadId", comunidad.getId().toString());
+            if (comunidad.getCodigoAcceso() != null) {
+                data.put("codigoReferencial", comunidad.getCodigoAcceso()); // ✅ solo referencial
+            }
+
+            firebaseMessagingService.enviarNotificacionAToken(
+                    solicitante.getFcmToken(),
+                    titulo,
+                    cuerpo,
+                    data
+            );
+        } catch (Exception ex) {
+            System.out.println("ERROR notificando aprobación de comunidad: " + ex.getMessage());
         }
-        if (v.startsWith("9") && v.length() == 9) {
-            return "+593" + v;
-        }
-        return v;
     }
 
     private String generarCodigo5() {

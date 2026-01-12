@@ -26,10 +26,10 @@ public class Comunidad implements Serializable {
     @Column(length = 255)
     private String direccion;
 
+    // Referencial (no para join)
     @Column(name = "codigo_acceso", length = 10, nullable = true, unique = true)
     private String codigoAcceso;
 
-    // ✅ NUEVO: Foto referencial de comunidad
     @Column(name = "foto_url", columnDefinition = "TEXT")
     private String fotoUrl;
 
@@ -39,26 +39,36 @@ public class Comunidad implements Serializable {
     @Column(name = "radio_km", precision = 6, scale = 2)
     private BigDecimal radioKm = BigDecimal.valueOf(1.00);
 
+    /**
+     * ✅ "Activa" (bandera legacy)
+     * Recomendado: que sea redundante con estado:
+     * - ACTIVA => activa=true
+     * - SUSPENDIDA / SOLICITADA => activa=false
+     */
     @Column(nullable = false)
     private Boolean activa = true;
 
     @Column(name = "fecha_creacion")
     private OffsetDateTime fechaCreacion;
 
+    /**
+     * ✅ Estados recomendados:
+     * - SOLICITADA: pendiente de aprobación por superadmin
+     * - ACTIVA: operativa
+     * - SUSPENDIDA: eliminado lógico (no operativa)
+     */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private EstadoComunidad estado = EstadoComunidad.ACTIVA;
 
-    // ✅ NUEVO: quién solicitó (para SMS)
+    // quién solicitó (para darle admin al aprobar y/o notificar)
     @Column(name = "solicitada_por_usuario_id")
     private Long solicitadaPorUsuarioId;
 
     @Transient
     private Long miembrosCount;
 
-    // =====================================================
-    // 🔗 RELACIÓN Comunidad -> UsuarioComunidad
-    // =====================================================
+    // Relación Comunidad -> UsuarioComunidad
     @OneToMany(mappedBy = "comunidad", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
     @JsonIgnoreProperties({"comunidad", "usuario"})
     private Set<UsuarioComunidad> usuarioComunidades = new HashSet<>();
@@ -66,6 +76,23 @@ public class Comunidad implements Serializable {
     @PrePersist
     public void prePersist() {
         this.fechaCreacion = OffsetDateTime.now();
+        if (this.estado == null) this.estado = EstadoComunidad.ACTIVA;
+        if (this.activa == null) this.activa = true;
+    }
+
+    // ===================== HELPERS =====================
+    public boolean isSuspendida() {
+        return this.estado == EstadoComunidad.SUSPENDIDA;
+    }
+
+    public void suspender() {
+        this.estado = EstadoComunidad.SUSPENDIDA;
+        this.activa = false;
+    }
+
+    public void reactivar() {
+        this.estado = EstadoComunidad.ACTIVA;
+        this.activa = true;
     }
 
     // GETTERS / SETTERS
@@ -100,17 +127,13 @@ public class Comunidad implements Serializable {
     public void setEstado(EstadoComunidad estado) { this.estado = estado; }
 
     public Long getSolicitadaPorUsuarioId() { return solicitadaPorUsuarioId; }
-    public void setSolicitadaPorUsuarioId(Long solicitadaPorUsuarioId) {
-        this.solicitadaPorUsuarioId = solicitadaPorUsuarioId;
-    }
+    public void setSolicitadaPorUsuarioId(Long solicitadaPorUsuarioId) { this.solicitadaPorUsuarioId = solicitadaPorUsuarioId; }
 
     public Long getMiembrosCount() { return miembrosCount; }
     public void setMiembrosCount(Long miembrosCount) { this.miembrosCount = miembrosCount; }
 
     public Set<UsuarioComunidad> getUsuarioComunidades() { return usuarioComunidades; }
-    public void setUsuarioComunidades(Set<UsuarioComunidad> usuarioComunidades) {
-        this.usuarioComunidades = usuarioComunidades;
-    }
+    public void setUsuarioComunidades(Set<UsuarioComunidad> usuarioComunidades) { this.usuarioComunidades = usuarioComunidades; }
 
     private static final long serialVersionUID = 1L;
 }

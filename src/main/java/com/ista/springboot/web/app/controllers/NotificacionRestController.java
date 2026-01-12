@@ -12,7 +12,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.ista.springboot.web.app.dto.NotificacionCreateDTO;
 import com.ista.springboot.web.app.dto.NotificacionDTO;
+import com.ista.springboot.web.app.models.dao.IUsuarioComunidad;
 import com.ista.springboot.web.app.models.entity.Comunidad;
+import com.ista.springboot.web.app.models.entity.EstadoComunidad;
 import com.ista.springboot.web.app.models.entity.Notificacion;
 import com.ista.springboot.web.app.models.entity.Usuario;
 import com.ista.springboot.web.app.models.entity.UsuarioComunidad;
@@ -37,6 +39,11 @@ public class NotificacionRestController {
 
     @Autowired
     private FirebaseMessagingService firebaseMessagingService;
+
+    @Autowired
+    private IUsuarioComunidad usuarioComunidadDao; // ✅ para enviar masivo sin LAZY
+
+    private static final String ESTADO_ACTIVO = "activo";
 
     // ===================== LISTAR =====================
     @GetMapping("/notificaciones")
@@ -99,15 +106,21 @@ public class NotificacionRestController {
         Notificacion guardada = notificacionService.save(noti);
         System.out.println("DEBUG Notificación guardada id=" + guardada.getId());
 
-        // -------- 3) ENVIAR FCM MASIVO --------
+        // -------- 3) ENVIAR FCM MASIVO (sin tocar tu lógica, solo robusto) --------
         try {
-            if (comunidad != null && comunidad.getUsuarioComunidades() != null) {
+            if (comunidad != null && comunidad.getId() != null) {
+
+                // ✅ Si está suspendida, no notificar (recomendado)
+                if (comunidad.getEstado() == EstadoComunidad.SUSPENDIDA) {
+                    System.out.println("DEBUG Comunidad suspendida, no se envía FCM. comunidadId=" + comunidad.getId());
+                    return new NotificacionDTO(guardada);
+                }
 
                 String titulo = guardada.getTitulo() != null
                         ? guardada.getTitulo()
-                        : (guardada.getTipoNotificacion().equalsIgnoreCase("INCIDENTE_COMUNIDAD")
-                            ? "Incidente en tu comunidad"
-                            : "Emergencia cercana");
+                        : ("INCIDENTE_COMUNIDAD".equalsIgnoreCase(guardada.getTipoNotificacion())
+                                ? "Incidente en tu comunidad"
+                                : "Emergencia cercana");
 
                 String cuerpo = guardada.getMensaje() != null
                         ? guardada.getMensaje()
@@ -120,13 +133,17 @@ public class NotificacionRestController {
                 }
                 data.put("comunidadId", comunidad.getId().toString());
 
-                for (UsuarioComunidad uc : comunidad.getUsuarioComunidades()) {
+                // ✅ Traer miembros activos por DAO (evita LAZY vacío)
+                List<UsuarioComunidad> miembrosActivos =
+                        usuarioComunidadDao.findByComunidadIdAndEstadoIgnoreCase(comunidad.getId(), ESTADO_ACTIVO);
 
+                for (UsuarioComunidad uc : miembrosActivos) {
                     if (uc == null || uc.getUsuario() == null) continue;
+
                     Usuario u = uc.getUsuario();
 
                     // No enviar al que reportó
-                    if (emisor != null && u.getId().equals(emisor.getId())) continue;
+                    if (emisor != null && u.getId() != null && u.getId().equals(emisor.getId())) continue;
 
                     if (u.getFcmToken() == null || u.getFcmToken().isBlank()) continue;
 
@@ -171,5 +188,4 @@ public class NotificacionRestController {
         }
         notificacionService.delete(id);
     }
-    
 }
