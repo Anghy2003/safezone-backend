@@ -1,3 +1,6 @@
+// ============================================================
+// UsuarioComunidadServiceImpl.java (COMPLETO + método NUEVO "unirsePorCodigo")
+// ============================================================
 package com.ista.springboot.web.app.models.services;
 
 import java.time.OffsetDateTime;
@@ -41,7 +44,7 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
     @Autowired private IUsuario usuarioDao;
     @Autowired private ComunidadInvitacionService invitacionService;
 
-    @Autowired private FirebaseMessagingService firebaseMessagingService; // ✅
+    @Autowired private FirebaseMessagingService firebaseMessagingService;
 
     // ============================================================
     // ✅ Unirse por TOKEN (LEGACY)
@@ -93,7 +96,7 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
     }
 
     // ============================================================
-    // ✅ Unirse por CÓDIGO (LEGACY)
+    // ✅ Unirse por CÓDIGO (LEGACY)  -> ya lo tenías
     // ============================================================
     @Override
     @Transactional
@@ -122,6 +125,65 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
         uc.setComunidad(comunidad);
         uc.setRol(ROL_USER);
         uc.setEstado(ESTADO_ACTIVO);
+
+        return usuarioComunidadDao.save(uc);
+    }
+
+    // ============================================================
+    // ✅ NUEVO: Unirse por CÓDIGO (PRO) - reusa el legacy pero corrige casos:
+    //    - Si ya existe y está PENDIENTE -> lo activa
+    //    - Si existe y está EXPULSADO -> 403 (o puedes permitir reactivar si quieres)
+    //    - Si ya está ACTIVO -> 409
+    // ============================================================
+    @Override
+    @Transactional
+    public UsuarioComunidad unirsePorCodigo(Long usuarioId, String codigoAcceso) {
+
+        if (usuarioId == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "usuarioId requerido");
+        if (codigoAcceso == null || codigoAcceso.trim().isEmpty())
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "codigoAcceso requerido");
+
+        Usuario usuario = usuarioDao.findById(usuarioId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Usuario no encontrado"));
+
+        Comunidad comunidad = comunidadService.findByCodigoAcceso(codigoAcceso.trim());
+        if (comunidad == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Comunidad no encontrada para ese código");
+
+        if (comunidad.getEstado() != EstadoComunidad.ACTIVA) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La comunidad aún no está activa");
+        }
+
+        UsuarioComunidad existente = usuarioComunidadDao.findByUsuarioIdAndComunidadId(usuarioId, comunidad.getId()).orElse(null);
+
+        // Ya existe relación
+        if (existente != null) {
+
+            if (ESTADO_ACTIVO.equalsIgnoreCase(existente.getEstado())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya perteneces a esta comunidad");
+            }
+
+            if (ESTADO_EXPULSADO.equalsIgnoreCase(existente.getEstado())) {
+                // Política: expulsado NO se reactiva por código
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes unirte porque fuiste expulsado");
+            }
+
+            // Si estaba PENDIENTE (u otro), lo activamos directamente por código
+            existente.setEstado(ESTADO_ACTIVO);
+            existente.setRol(ROL_USER);
+            existente.setFechaUnion(OffsetDateTime.now());
+            existente.setAprobadoPor(null); // por código, no por admin (si quieres puedes guardar un "system user")
+
+            return usuarioComunidadDao.save(existente);
+        }
+
+        // No existe relación -> crear y activar
+        UsuarioComunidad uc = new UsuarioComunidad();
+        uc.setUsuario(usuario);
+        uc.setComunidad(comunidad);
+        uc.setRol(ROL_USER);
+        uc.setEstado(ESTADO_ACTIVO);
+        uc.setFechaUnion(OffsetDateTime.now());
+        uc.setAprobadoPor(null);
 
         return usuarioComunidadDao.save(uc);
     }
@@ -194,13 +256,10 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
 
     private void notificarAdminsSolicitud(Long comunidadId, Usuario solicitante) {
         try {
-            // trae TODOS los miembros en estado ACTIVO (ya tienes entityGraph para usuario y comunidad)
             List<UsuarioComunidad> miembros = usuarioComunidadDao.findByComunidadIdAndEstadoIgnoreCase(comunidadId, ESTADO_ACTIVO);
 
             for (UsuarioComunidad uc : miembros) {
                 if (uc == null || uc.getUsuario() == null) continue;
-
-                // solo admins
                 if (uc.getRol() == null || !ROL_ADMIN_COMUNIDAD.equalsIgnoreCase(uc.getRol())) continue;
 
                 Usuario admin = uc.getUsuario();
@@ -236,7 +295,7 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
     }
 
     // ============================================================
-    // ✅ NUEVO: Admin aprueba solicitud (SIN TOKEN) -> ACTIVO + NOTIFICA USUARIO
+    // ✅ Admin aprueba solicitud -> ACTIVO + NOTIFICA USUARIO
     // ============================================================
     @Override
     @Transactional
@@ -256,7 +315,6 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
         Usuario admin = usuarioDao.findById(adminId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Admin no encontrado"));
 
-        // activar
         solicitud.setAprobadoPor(admin);
         solicitud.setEstado(ESTADO_ACTIVO);
         solicitud.setRol(ROL_USER);
@@ -264,7 +322,6 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
 
         UsuarioComunidad guardada = usuarioComunidadDao.save(solicitud);
 
-        // ✅ Notificar al usuario aprobado
         notificarUsuarioAprobado(guardada);
 
         return guardada;
@@ -293,7 +350,7 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
     }
 
     // ============================================================
-    // ✅ Admin rechaza solicitud -> marca expulsado + NOTIFICA usuario
+    // ✅ Admin rechaza solicitud -> EXPULSADO + NOTIFICA usuario
     // ============================================================
     @Override
     @Transactional
@@ -338,13 +395,12 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
     }
 
     // ============================================================
-    // ✅ MÉTODO LEGACY (ya no se usa en flujo pro, lo dejo para compatibilidad)
+    // ✅ MÉTODO LEGACY (compatibilidad token)
     // ============================================================
     @Override
     @Transactional
     public Map<String, Object> aprobarSolicitudYGenerarToken(Long adminId, Long comunidadId, Long usuarioId, Integer horasExpira) {
-        // Si todavía tienes front usando token, no se rompe.
-        // Pero tu flujo PRO ya no lo llama.
+
         requireAdminComunidad(adminId, comunidadId);
 
         if (usuarioId == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "usuarioId requerido");

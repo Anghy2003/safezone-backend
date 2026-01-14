@@ -1,3 +1,6 @@
+// =====================================================
+// ComunidadServiceImpl.java  (AJUSTADO: vuelve SMS Twilio con código al aprobar)
+// =====================================================
 package com.ista.springboot.web.app.models.services;
 
 import java.time.OffsetDateTime;
@@ -29,6 +32,10 @@ public class ComunidadServiceImpl implements IComunidadService {
     @Autowired(required = false)
     private FirebaseMessagingService firebaseMessagingService;
 
+    // ✅ Twilio SMS (para enviar código al aprobar)
+    @Autowired(required = false)
+    private TwilioSmsService twilioSmsService;
+
     // ===================== LISTAR =====================
     @Override
     public List<Comunidad> findAll() {
@@ -55,13 +62,12 @@ public class ComunidadServiceImpl implements IComunidadService {
         return comunidadDao.save(comunidad);
     }
 
-    // ✅ Eliminado lógico recomendado desde controller (suspender)
     @Override
     public void delete(Long id) {
         comunidadDao.deleteById(id);
     }
 
-    // ✅ Solo referencial (no para unirse)
+    // ✅ Solo referencial (no para unirse) - pero tu app puede usarlo como lookup previo
     @Override
     public Comunidad findByCodigoAcceso(String codigoAcceso) {
         Comunidad comunidad = comunidadDao.findByCodigoAcceso(codigoAcceso);
@@ -89,7 +95,7 @@ public class ComunidadServiceImpl implements IComunidadService {
         comunidad.setEstado(EstadoComunidad.SOLICITADA);
         comunidad.setActiva(false);
 
-        // ✅ Código NO se usa aquí. Se genera al aprobar (solo referencial).
+        // ✅ el código se genera al aprobar
         comunidad.setCodigoAcceso(null);
 
         comunidad.setSolicitadaPorUsuarioId(usuarioId);
@@ -97,7 +103,7 @@ public class ComunidadServiceImpl implements IComunidadService {
     }
 
     // ===================== APROBAR =====================
-    // ✅ Al aprobar: activa + genera código (referencial) + solicitante => admin_comunidad activo
+    // ✅ Al aprobar: activa + genera código + solicitante => admin_comunidad activo
     @Override
     @Transactional
     public Comunidad aprobarComunidad(Long comunidadId) {
@@ -113,7 +119,7 @@ public class ComunidadServiceImpl implements IComunidadService {
         comunidad.setEstado(EstadoComunidad.ACTIVA);
         comunidad.setActiva(true);
 
-        // ✅ Código referencial (NO para unirse)
+        // ✅ Generar código
         if (comunidad.getCodigoAcceso() == null || comunidad.getCodigoAcceso().isBlank()) {
             comunidad.setCodigoAcceso(generarCodigo5());
         }
@@ -136,19 +142,54 @@ public class ComunidadServiceImpl implements IComunidadService {
                     uc.setComunidad(guardada);
                 }
 
-                // 🔥 CONSISTENCIA total con tu UsuarioComunidadServiceImpl
                 uc.setRol(UsuarioComunidadServiceImpl.ROL_ADMIN_COMUNIDAD);
                 uc.setEstado(UsuarioComunidadServiceImpl.ESTADO_ACTIVO);
                 uc.setFechaUnion(OffsetDateTime.now());
 
                 usuarioComunidadDao.save(uc);
 
-                // ✅ Notificar por FCM (si existe el bean)
+                // ✅ SMS con código (Twilio) - vuelve el comportamiento “antes”
+                enviarSmsCodigoComunidad(guardada, solicitante);
+
+                // ✅ FCM (si existe)
                 notificarSolicitanteAprobacion(guardada, solicitante);
             }
         }
 
         return guardada;
+    }
+
+    // =====================================================
+    // SMS: Enviar código por Twilio al solicitante
+    // =====================================================
+    private void enviarSmsCodigoComunidad(Comunidad comunidad, Usuario solicitante) {
+        try {
+            if (twilioSmsService == null) return;
+            if (solicitante == null) return;
+
+            // AJUSTA este getter según tu entidad Usuario:
+            // - getTelefono()
+            // - getCelular()
+            // - getPhone()
+            // etc.
+            String telefono = solicitante.getTelefono();
+
+            if (telefono == null || telefono.isBlank()) return;
+
+            String codigo = comunidad.getCodigoAcceso();
+            if (codigo == null || codigo.isBlank()) return;
+
+            String msg = "SafeZone: Tu comunidad \"" + comunidad.getNombre() + "\" fue aprobada.\n"
+                       + "Código de acceso: " + codigo + "\n"
+                       + "Si alguien no lo sabe, puede solicitar unirse desde la app.";
+
+            // Debe venir en formato +593...
+            String sid = twilioSmsService.enviarSms(telefono.trim(), msg);
+            System.out.println("SMS Twilio enviado. SID=" + sid);
+
+        } catch (Exception ex) {
+            System.out.println("ERROR enviando SMS Twilio: " + ex.getMessage());
+        }
     }
 
     private void notificarSolicitanteAprobacion(Comunidad comunidad, Usuario solicitante) {
@@ -163,7 +204,7 @@ public class ComunidadServiceImpl implements IComunidadService {
             data.put("tipoNotificacion", "COMMUNITY_APPROVED");
             data.put("comunidadId", comunidad.getId().toString());
             if (comunidad.getCodigoAcceso() != null) {
-                data.put("codigoReferencial", comunidad.getCodigoAcceso()); // ✅ solo referencial
+                data.put("codigoAcceso", comunidad.getCodigoAcceso());
             }
 
             firebaseMessagingService.enviarNotificacionAToken(

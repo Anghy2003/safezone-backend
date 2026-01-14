@@ -40,4 +40,5 @@ public interface IUsuarioComunidad extends JpaRepository<UsuarioComunidad, Long>
     // === Mis comunidades activas ===
     @EntityGraph(attributePaths = {"comunidad"})
     List<UsuarioComunidad> findByUsuarioIdAndEstadoIgnoreCase(Long usuarioId, String estado);
+    UsuarioComunidad unirsePorCodigo(Long usuarioId, String codigoAcceso);
 }

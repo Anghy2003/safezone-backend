@@ -22,5 +22,7 @@ public interface IUsuarioComunidadService {
 
     void rechazarSolicitud(Long adminId, Long comunidadId, Long usuarioId);
     UsuarioComunidad aprobarSolicitud(Long adminId, Long comunidadId, Long usuarioId);
+    UsuarioComunidad unirsePorCodigo(Long usuarioId, String codigoAcceso);
+
 
 }

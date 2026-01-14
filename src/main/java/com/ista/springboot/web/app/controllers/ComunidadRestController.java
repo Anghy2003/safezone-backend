@@ -1,3 +1,8 @@
+// =====================================================
+// ComunidadRestController.java (COMPLETO)
+// - Mantiene tu flujo actual (solicitar/aprobar/rechazar)
+// - Agrega endpoint: UNIRSE POR CÓDIGO (entra directo si lo sabe)
+// =====================================================
 package com.ista.springboot.web.app.controllers;
 
 import java.math.BigDecimal;
@@ -103,10 +108,7 @@ public class ComunidadRestController {
         if (comunidad == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Comunidad no encontrada");
 
         comunidad.setActiva(false);
-
-        // ✅ Requiere EstadoComunidad.SUSPENDIDA (si no existe, crea el enum)
         comunidad.setEstado(EstadoComunidad.SUSPENDIDA);
-
         comunidadService.save(comunidad);
     }
 
@@ -124,12 +126,46 @@ public class ComunidadRestController {
         comunidadService.save(comunidad);
     }
 
-    // ===================== BUSCAR POR CÓDIGO (solo referencial) =====================
+    // ===================== BUSCAR POR CÓDIGO =====================
     @GetMapping("/comunidades/codigo/{codigo}")
     public ComunidadDTO buscarPorCodigo(@PathVariable String codigo) {
         Comunidad comunidad = comunidadService.findByCodigoAcceso(codigo);
         if (comunidad == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Código no encontrado");
         return new ComunidadDTO(comunidad);
+    }
+
+    // ===================== NUEVO: UNIRSE POR CÓDIGO (entra directo si lo sabe) =====================
+    // Requiere: usuarioComunidadService.unirsePorCodigo(usuarioId, codigo)
+    @PostMapping("/comunidades/unirse/codigo/{codigo}/usuario/{usuarioId}")
+    public Map<String, Object> unirsePorCodigo(@PathVariable String codigo, @PathVariable Long usuarioId) {
+
+        UsuarioComunidad uc = usuarioComunidadService.unirsePorCodigo(usuarioId, codigo);
+
+        Comunidad c = uc.getComunidad();
+        if (c == null || c.getId() == null) {
+            return Map.of(
+                "success", true,
+                "usuarioId", usuarioId,
+                "estado", uc.getEstado(),
+                "rol", uc.getRol(),
+                "comunidad", Map.of()
+            );
+        }
+
+        long miembrosCount = usuarioComunidadDao.countByComunidadId(c.getId());
+
+        return Map.of(
+            "success", true,
+            "usuarioId", usuarioId,
+            "estado", uc.getEstado(),
+            "rol", uc.getRol(),
+            "comunidad", Map.of(
+                "id", c.getId(),
+                "nombre", c.getNombre(),
+                "fotoUrl", c.getFotoUrl(),
+                "miembrosCount", miembrosCount
+            )
+        );
     }
 
     // ===================== SOLICITAR CREAR COMUNIDAD =====================
@@ -174,7 +210,7 @@ public class ComunidadRestController {
     }
 
     // =====================================================================
-    // ===================== NUEVO FLUJO: SOLICITAR / APROBAR =====================
+    // ===================== FLUJO: SOLICITAR / APROBAR =====================
     // =====================================================================
 
     // Usuario solicita unirse (pendiente) + NOTIFICA ADMINS

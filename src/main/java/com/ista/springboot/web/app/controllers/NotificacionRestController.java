@@ -7,11 +7,13 @@ import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.ista.springboot.web.app.dto.NotificacionCreateDTO;
 import com.ista.springboot.web.app.dto.NotificacionDTO;
+import com.ista.springboot.web.app.models.dao.INotificacion;
 import com.ista.springboot.web.app.models.dao.IUsuarioComunidad;
 import com.ista.springboot.web.app.models.entity.Comunidad;
 import com.ista.springboot.web.app.models.entity.EstadoComunidad;
@@ -32,6 +34,9 @@ public class NotificacionRestController {
     private INotificacionService notificacionService;
 
     @Autowired
+    private INotificacion notificacionDao; // ✅ unread + mark-read
+
+    @Autowired
     private IUsuarioService usuarioService;
 
     @Autowired
@@ -41,7 +46,7 @@ public class NotificacionRestController {
     private FirebaseMessagingService firebaseMessagingService;
 
     @Autowired
-    private IUsuarioComunidad usuarioComunidadDao; // ✅ para enviar masivo sin LAZY
+    private IUsuarioComunidad usuarioComunidadDao;
 
     private static final String ESTADO_ACTIVO = "activo";
 
@@ -62,15 +67,39 @@ public class NotificacionRestController {
         return new NotificacionDTO(n);
     }
 
+    // ===================== NUEVO: UNREAD POR COMUNIDAD =====================
+    // GET /api/notificaciones/unread-by-comunidad/123
+    // Response: { "1": 3, "2": 1 }
+    @GetMapping("/notificaciones/unread-by-comunidad/{userId}")
+    public Map<Long, Long> unreadByComunidad(@PathVariable Long userId) {
+        List<Object[]> rows = notificacionDao.countUnreadByComunidad(userId);
+
+        Map<Long, Long> out = new HashMap<>();
+        for (Object[] r : rows) {
+            Long comunidadId = (Long) r[0];
+            Long count = (Long) r[1];
+            out.put(comunidadId, count);
+        }
+        return out;
+    }
+
+    // ===================== NUEVO: MARCAR LEÍDO POR COMUNIDAD =====================
+    // POST /api/notificaciones/mark-read?userId=123&comunidadId=5
+    @Transactional
+    @PostMapping("/notificaciones/mark-read")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void markRead(@RequestParam Long userId, @RequestParam Long comunidadId) {
+        notificacionDao.markReadByComunidad(userId, comunidadId);
+    }
+
     // ===================== CREAR =====================
     @PostMapping("/notificaciones")
     @ResponseStatus(HttpStatus.CREATED)
     public NotificacionDTO create(@RequestBody NotificacionCreateDTO dto) {
 
-        // -------- 1) CREAR ENTIDAD --------
         Notificacion noti = new Notificacion();
 
-        // Usuario emisor
+        // Usuario emisor (según tu modelo actual)
         Usuario emisor = null;
         if (dto.getUsuarioId() != null) {
             emisor = usuarioService.findById(dto.getUsuarioId());
@@ -102,15 +131,13 @@ public class NotificacionRestController {
         noti.setLongitud(dto.getLongitud());
         noti.setDireccion(dto.getDireccion());
 
-        // -------- 2) GUARDAR BD --------
         Notificacion guardada = notificacionService.save(noti);
         System.out.println("DEBUG Notificación guardada id=" + guardada.getId());
 
-        // -------- 3) ENVIAR FCM MASIVO (sin tocar tu lógica, solo robusto) --------
+        // -------- FCM masivo (tu lógica) --------
         try {
             if (comunidad != null && comunidad.getId() != null) {
 
-                // ✅ Si está suspendida, no notificar (recomendado)
                 if (comunidad.getEstado() == EstadoComunidad.SUSPENDIDA) {
                     System.out.println("DEBUG Comunidad suspendida, no se envía FCM. comunidadId=" + comunidad.getId());
                     return new NotificacionDTO(guardada);
@@ -133,7 +160,6 @@ public class NotificacionRestController {
                 }
                 data.put("comunidadId", comunidad.getId().toString());
 
-                // ✅ Traer miembros activos por DAO (evita LAZY vacío)
                 List<UsuarioComunidad> miembrosActivos =
                         usuarioComunidadDao.findByComunidadIdAndEstadoIgnoreCase(comunidad.getId(), ESTADO_ACTIVO);
 
@@ -142,17 +168,11 @@ public class NotificacionRestController {
 
                     Usuario u = uc.getUsuario();
 
-                    // No enviar al que reportó
                     if (emisor != null && u.getId() != null && u.getId().equals(emisor.getId())) continue;
-
                     if (u.getFcmToken() == null || u.getFcmToken().isBlank()) continue;
 
-                    System.out.println("DEBUG Enviando FCM a userId=" + u.getId());
-
                     try {
-                        firebaseMessagingService.enviarNotificacionAToken(
-                                u.getFcmToken(), titulo, cuerpo, data
-                        );
+                        firebaseMessagingService.enviarNotificacionAToken(u.getFcmToken(), titulo, cuerpo, data);
                     } catch (Exception ex) {
                         System.out.println("ERROR enviando FCM userId=" + u.getId() + ": " + ex.getMessage());
                     }
@@ -163,7 +183,6 @@ public class NotificacionRestController {
             System.out.println("ERROR FCM masivo: " + e.getMessage());
         }
 
-        // -------- 4) RETORNAR DTO --------
         return new NotificacionDTO(guardada);
     }
 

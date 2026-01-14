@@ -1,6 +1,7 @@
 package com.ista.springboot.web.app.controllers;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -11,11 +12,15 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.ista.springboot.web.app.dto.MensajeComunidadCreateDTO;
 import com.ista.springboot.web.app.dto.MensajeComunidadDTO;
+import com.ista.springboot.web.app.models.dao.IUsuarioComunidad;
 import com.ista.springboot.web.app.models.entity.Comunidad;
 import com.ista.springboot.web.app.models.entity.MensajeComunidad;
+import com.ista.springboot.web.app.models.entity.Notificacion;
 import com.ista.springboot.web.app.models.entity.Usuario;
+import com.ista.springboot.web.app.models.entity.UsuarioComunidad;
 import com.ista.springboot.web.app.models.services.IComunidadService;
 import com.ista.springboot.web.app.models.services.IMensajeComunidadService;
+import com.ista.springboot.web.app.models.services.INotificacionService;
 import com.ista.springboot.web.app.models.services.IUsuarioService;
 
 @Controller
@@ -32,6 +37,14 @@ public class ChatWebSocketController {
 
     @Autowired
     private IComunidadService comunidadService;
+
+    @Autowired
+    private IUsuarioComunidad usuarioComunidadDao;
+
+    @Autowired
+    private INotificacionService notificacionService;
+
+    private static final String ESTADO_ACTIVO = "activo";
 
     @MessageMapping("/chat/comunidad")
     public void enviarMensajeComunidad(MensajeComunidadCreateDTO dto) {
@@ -91,18 +104,14 @@ public class ChatWebSocketController {
                 ? dto.getTipo().trim().toLowerCase()
                 : "texto";
 
-        // Si viene adjunto y tipo viene vacío o "texto", lo inferimos si NO hay texto
         if (("texto".equals(tipo) || tipo.isBlank()) && !tieneTexto && tieneAdjunto) {
             if (tieneImagen) tipo = "imagen";
             else if (tieneVideo) tipo = "video";
             else if (tieneAudio) tipo = "audio";
         }
 
-        // ===================== FILTRO SENSIBLE (FORZADO POR BACKEND) =====================
-        // ✅ Regla: TODO adjunto es sensible (porque son reportes/incidentes)
+        // ===================== FILTRO SENSIBLE (tu lógica) =====================
         final boolean contenidoSensible = tieneAdjunto;
-
-        // Motivo/score: los puedes personalizar
         final String sensibilidadMotivo = contenidoSensible ? "Reporte / Incidente" : null;
         final Double sensibilidadScore  = contenidoSensible ? 1.0 : null;
 
@@ -134,13 +143,66 @@ public class ChatWebSocketController {
 
         m.setFechaEnvio(OffsetDateTime.now());
 
-        // ✅ Guardar campos sensibles (forzados)
         m.setContenidoSensible(contenidoSensible);
         m.setSensibilidadMotivo(sensibilidadMotivo);
         m.setSensibilidadScore(sensibilidadScore);
 
         MensajeComunidad guardado = mensajeService.save(m);
+
+        // ✅ Crear notificaciones por usuario para puntito en Mis comunidades
+        try {
+            crearNotificacionesChat(usuario, comunidad, canal, tipo, tieneTexto, dto.getMensaje());
+        } catch (Exception ex) {
+            System.out.println("WARN no se pudo crear notificaciones chat: " + ex.getMessage());
+        }
+
         return new MensajeComunidadDTO(guardado);
+    }
+
+    private void crearNotificacionesChat(
+            Usuario emisor,
+            Comunidad comunidad,
+            String canal,
+            String tipo,
+            boolean tieneTexto,
+            String texto
+    ) {
+        if (comunidad == null || comunidad.getId() == null) return;
+
+        List<UsuarioComunidad> miembrosActivos =
+                usuarioComunidadDao.findByComunidadIdAndEstadoIgnoreCase(comunidad.getId(), ESTADO_ACTIVO);
+
+        final String tipoNoti = "CHAT_" + canal; // CHAT_COMUNIDAD / CHAT_VECINOS
+        final String titulo = "Nuevo mensaje en " + (comunidad.getNombre() != null ? comunidad.getNombre() : "tu comunidad");
+
+        final String cuerpo = tieneTexto
+                ? (texto != null ? texto.trim() : "Nuevo mensaje")
+                : ("Nuevo " + (tipo != null ? tipo : "mensaje"));
+
+        for (UsuarioComunidad uc : miembrosActivos) {
+            if (uc == null || uc.getUsuario() == null) continue;
+
+            Usuario receptor = uc.getUsuario();
+            if (receptor.getId() == null) continue;
+
+            if (emisor != null && emisor.getId() != null && receptor.getId().equals(emisor.getId())) continue;
+
+            Notificacion n = new Notificacion();
+            n.setUsuario(receptor); // ✅ receptor
+            n.setComunidad(comunidad);
+            n.setTipoNotificacion(tipoNoti);
+            n.setTitulo(titulo);
+            n.setMensaje(cuerpo);
+
+            n.setLeido(false);
+            n.setFechaEnvio(OffsetDateTime.now());
+
+            n.setTieneFoto("imagen".equalsIgnoreCase(tipo));
+            n.setTieneVideo("video".equalsIgnoreCase(tipo));
+            n.setTieneAudio("audio".equalsIgnoreCase(tipo));
+
+            notificacionService.save(n);
+        }
     }
 
     public void publicar(String destino, MensajeComunidadDTO payload) {

@@ -5,7 +5,6 @@ import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -25,13 +24,6 @@ public class MensajeComunidadRestController {
     @Autowired
     private ChatWebSocketController chatWebSocketController;
 
-    /**
-     * ========================= HISTORIAL DE CHAT =========================
-     * Ejemplos:
-     *  - /api/mensajes-comunidad/historial?comunidadId=1
-     *  - /api/mensajes-comunidad/historial?comunidadId=1&canal=COMUNIDAD
-     *  - /api/mensajes-comunidad/historial?comunidadId=1&canal=VECINOS
-     */
     @GetMapping("/mensajes-comunidad/historial")
     public List<MensajeComunidadDTO> historial(
             @RequestParam Long comunidadId,
@@ -53,10 +45,6 @@ public class MensajeComunidadRestController {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * ========================= MENSAJE POR ID =========================
-     * /api/mensajes-comunidad/{id}
-     */
     @GetMapping("/mensajes-comunidad/{id}")
     public MensajeComunidadDTO show(@PathVariable Long id) {
         MensajeComunidad m = mensajeService.findById(id);
@@ -68,23 +56,14 @@ public class MensajeComunidadRestController {
         return new MensajeComunidadDTO(m);
     }
 
-    /**
-     * ========================= ENVIAR MENSAJE (REST) =========================
-     * Flutter Reporte -> POST /api/mensajes-comunidad/enviar
-     *
-     * Guarda en BD y PUBLICA por WebSocket para que se vea en el chat en vivo.
-     */
     @PostMapping("/mensajes-comunidad/enviar")
     @ResponseStatus(HttpStatus.CREATED)
     public MensajeComunidadDTO enviar(@RequestBody MensajeComunidadCreateDTO dto) {
 
-        // Reutilizamos la misma lógica del WS para garantizar consistencia.
-        // Si canal viene null, default "COMUNIDAD".
         String canalDefault = "COMUNIDAD";
 
         MensajeComunidadDTO saved = chatWebSocketController.manejarMensajeChat(dto, canalDefault);
 
-        // Además, publicamos al topic correcto (como si llegara por WS).
         String canal = (dto.getCanal() != null && !dto.getCanal().isBlank())
                 ? dto.getCanal().trim()
                 : canalDefault;
@@ -93,7 +72,6 @@ public class MensajeComunidadRestController {
                 ? "/topic/vecinos-" + saved.getComunidadId()
                 : "/topic/comunidad-" + saved.getComunidadId();
 
-        // Publicación WS (ya que esta request entra por REST)
         chatWebSocketController.publicar(destino, saved);
 
         return saved;
