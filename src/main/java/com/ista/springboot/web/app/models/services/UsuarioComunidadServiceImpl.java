@@ -1,6 +1,3 @@
-// ============================================================
-// UsuarioComunidadServiceImpl.java (COMPLETO + método NUEVO "unirsePorCodigo")
-// ============================================================
 package com.ista.springboot.web.app.models.services;
 
 import java.time.OffsetDateTime;
@@ -25,7 +22,7 @@ import com.ista.springboot.web.app.models.entity.UsuarioComunidad;
 @Service
 public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
 
-    // ========= ROLES / ESTADOS (minúsculas) =========
+    // ========= ROLES / ESTADOS =========
     public static final String ROL_SUPER_ADMIN = "super_admin";
     public static final String ROL_ADMIN_COMUNIDAD = "admin_comunidad";
     public static final String ROL_USER = "usuario";
@@ -43,7 +40,6 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
     @Autowired private IComunidadService comunidadService;
     @Autowired private IUsuario usuarioDao;
     @Autowired private ComunidadInvitacionService invitacionService;
-
     @Autowired private FirebaseMessagingService firebaseMessagingService;
 
     // ============================================================
@@ -65,7 +61,6 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
         if (comunidad == null || comunidad.getId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La invitación no tiene comunidad válida");
         }
-
         if (comunidad.getEstado() != EstadoComunidad.ACTIVA) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La comunidad aún no está activa");
         }
@@ -78,6 +73,7 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
             existente.setEstado(ESTADO_ACTIVO);
             existente.setRol(ROL_USER);
             if (inv.getCreatedBy() != null) existente.setAprobadoPor(inv.getCreatedBy());
+            // existente.setFechaUnion(OffsetDateTime.now()); // si existe en tu entidad
             UsuarioComunidad actualizado = usuarioComunidadDao.save(existente);
             invitacionService.marcarUsada(inv);
             return actualizado;
@@ -89,6 +85,7 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
         uc.setRol(ROL_USER);
         uc.setEstado(ESTADO_ACTIVO);
         if (inv.getCreatedBy() != null) uc.setAprobadoPor(inv.getCreatedBy());
+        // uc.setFechaUnion(OffsetDateTime.now()); // si existe en tu entidad
 
         UsuarioComunidad saved = usuarioComunidadDao.save(uc);
         invitacionService.marcarUsada(inv);
@@ -96,7 +93,7 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
     }
 
     // ============================================================
-    // ✅ Unirse por CÓDIGO (LEGACY)  -> ya lo tenías
+    // ✅ Unirse por CÓDIGO (LEGACY)  -> tu método original
     // ============================================================
     @Override
     @Transactional
@@ -125,15 +122,13 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
         uc.setComunidad(comunidad);
         uc.setRol(ROL_USER);
         uc.setEstado(ESTADO_ACTIVO);
+        // uc.setFechaUnion(OffsetDateTime.now()); // si existe en tu entidad
 
         return usuarioComunidadDao.save(uc);
     }
 
     // ============================================================
-    // ✅ NUEVO: Unirse por CÓDIGO (PRO) - reusa el legacy pero corrige casos:
-    //    - Si ya existe y está PENDIENTE -> lo activa
-    //    - Si existe y está EXPULSADO -> 403 (o puedes permitir reactivar si quieres)
-    //    - Si ya está ACTIVO -> 409
+    // ✅ NUEVO: Unirse por CÓDIGO (PRO)
     // ============================================================
     @Override
     @Transactional
@@ -153,9 +148,10 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La comunidad aún no está activa");
         }
 
-        UsuarioComunidad existente = usuarioComunidadDao.findByUsuarioIdAndComunidadId(usuarioId, comunidad.getId()).orElse(null);
+        UsuarioComunidad existente = usuarioComunidadDao
+                .findByUsuarioIdAndComunidadId(usuarioId, comunidad.getId())
+                .orElse(null);
 
-        // Ya existe relación
         if (existente != null) {
 
             if (ESTADO_ACTIVO.equalsIgnoreCase(existente.getEstado())) {
@@ -163,27 +159,23 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
             }
 
             if (ESTADO_EXPULSADO.equalsIgnoreCase(existente.getEstado())) {
-                // Política: expulsado NO se reactiva por código
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes unirte porque fuiste expulsado");
             }
 
-            // Si estaba PENDIENTE (u otro), lo activamos directamente por código
             existente.setEstado(ESTADO_ACTIVO);
             existente.setRol(ROL_USER);
-            existente.setFechaUnion(OffsetDateTime.now());
-            existente.setAprobadoPor(null); // por código, no por admin (si quieres puedes guardar un "system user")
-
+            existente.setAprobadoPor(null);
+            // existente.setFechaUnion(OffsetDateTime.now()); // si existe en tu entidad
             return usuarioComunidadDao.save(existente);
         }
 
-        // No existe relación -> crear y activar
         UsuarioComunidad uc = new UsuarioComunidad();
         uc.setUsuario(usuario);
         uc.setComunidad(comunidad);
         uc.setRol(ROL_USER);
         uc.setEstado(ESTADO_ACTIVO);
-        uc.setFechaUnion(OffsetDateTime.now());
         uc.setAprobadoPor(null);
+        // uc.setFechaUnion(OffsetDateTime.now()); // si existe en tu entidad
 
         return usuarioComunidadDao.save(uc);
     }
@@ -206,7 +198,7 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
     }
 
     // ============================================================
-    // ✅ NUEVO: Usuario solicita unirse (PENDIENTE) + NOTIFICA ADMINS
+    // ✅ Usuario solicita unirse (PENDIENTE) + NOTIFICA ADMINS
     // ============================================================
     @Override
     @Transactional
@@ -226,7 +218,6 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
         }
 
         UsuarioComunidad existente = usuarioComunidadDao.findByUsuarioIdAndComunidadId(usuarioId, comunidadId).orElse(null);
-        UsuarioComunidad guardada;
 
         if (existente != null) {
             if (ESTADO_ACTIVO.equalsIgnoreCase(existente.getEstado())) {
@@ -238,19 +229,19 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
             existente.setEstado(ESTADO_PENDIENTE);
             existente.setRol(ROL_USER);
             existente.setAprobadoPor(null);
-            guardada = usuarioComunidadDao.save(existente);
-        } else {
-            UsuarioComunidad uc = new UsuarioComunidad();
-            uc.setUsuario(usuario);
-            uc.setComunidad(comunidad);
-            uc.setRol(ROL_USER);
-            uc.setEstado(ESTADO_PENDIENTE);
-            guardada = usuarioComunidadDao.save(uc);
+            UsuarioComunidad guardada = usuarioComunidadDao.save(existente);
+            notificarAdminsSolicitud(comunidadId, usuario);
+            return guardada;
         }
 
-        // ✅ Notificar a TODOS los admins activos de la comunidad
-        notificarAdminsSolicitud(comunidadId, usuario);
+        UsuarioComunidad uc = new UsuarioComunidad();
+        uc.setUsuario(usuario);
+        uc.setComunidad(comunidad);
+        uc.setRol(ROL_USER);
+        uc.setEstado(ESTADO_PENDIENTE);
 
+        UsuarioComunidad guardada = usuarioComunidadDao.save(uc);
+        notificarAdminsSolicitud(comunidadId, usuario);
         return guardada;
     }
 
@@ -266,16 +257,14 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
                 if (admin.getFcmToken() == null || admin.getFcmToken().isBlank()) continue;
 
                 String titulo = "Solicitud para unirse";
-                String cuerpo = (solicitante != null && solicitante.getNombre() != null && !solicitante.getNombre().isBlank())
+                String cuerpo = (solicitante.getNombre() != null && !solicitante.getNombre().isBlank())
                         ? "El usuario " + solicitante.getNombre() + " solicitó unirse a tu comunidad."
                         : "Un usuario solicitó unirse a tu comunidad.";
 
                 Map<String, String> data = new HashMap<>();
                 data.put("tipoNotificacion", TIPO_JOIN_REQUEST);
                 data.put("comunidadId", comunidadId.toString());
-                if (solicitante != null && solicitante.getId() != null) {
-                    data.put("usuarioId", solicitante.getId().toString());
-                }
+                if (solicitante.getId() != null) data.put("usuarioId", solicitante.getId().toString());
 
                 firebaseMessagingService.enviarNotificacionAToken(admin.getFcmToken(), titulo, cuerpo, data);
             }
@@ -302,7 +291,6 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
     public UsuarioComunidad aprobarSolicitud(Long adminId, Long comunidadId, Long usuarioId) {
 
         requireAdminComunidad(adminId, comunidadId);
-
         if (usuarioId == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "usuarioId requerido");
 
         UsuarioComunidad solicitud = usuarioComunidadDao.findByUsuarioIdAndComunidadId(usuarioId, comunidadId)
@@ -318,12 +306,10 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
         solicitud.setAprobadoPor(admin);
         solicitud.setEstado(ESTADO_ACTIVO);
         solicitud.setRol(ROL_USER);
-        solicitud.setFechaUnion(OffsetDateTime.now());
+        // solicitud.setFechaUnion(OffsetDateTime.now()); // si existe en tu entidad
 
         UsuarioComunidad guardada = usuarioComunidadDao.save(solicitud);
-
         notificarUsuarioAprobado(guardada);
-
         return guardada;
     }
 
@@ -333,11 +319,10 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
 
             Usuario u = uc.getUsuario();
             Comunidad c = uc.getComunidad();
-
             if (u.getFcmToken() == null || u.getFcmToken().isBlank()) return;
 
             String titulo = "Solicitud aprobada";
-            String cuerpo  = "Ya puedes ingresar a la comunidad \"" + c.getNombre() + "\".";
+            String cuerpo = "Ya puedes ingresar a la comunidad \"" + c.getNombre() + "\".";
 
             Map<String, String> data = new HashMap<>();
             data.put("tipoNotificacion", TIPO_JOIN_APPROVED);
@@ -355,8 +340,8 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
     @Override
     @Transactional
     public void rechazarSolicitud(Long adminId, Long comunidadId, Long usuarioId) {
-        requireAdminComunidad(adminId, comunidadId);
 
+        requireAdminComunidad(adminId, comunidadId);
         if (usuarioId == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "usuarioId requerido");
 
         UsuarioComunidad solicitud = usuarioComunidadDao.findByUsuarioIdAndComunidadId(usuarioId, comunidadId)
@@ -378,11 +363,10 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
 
             Usuario u = uc.getUsuario();
             Comunidad c = uc.getComunidad();
-
             if (u.getFcmToken() == null || u.getFcmToken().isBlank()) return;
 
             String titulo = "Solicitud rechazada";
-            String cuerpo  = "Tu solicitud para unirte a \"" + c.getNombre() + "\" fue rechazada.";
+            String cuerpo = "Tu solicitud para unirte a \"" + c.getNombre() + "\" fue rechazada.";
 
             Map<String, String> data = new HashMap<>();
             data.put("tipoNotificacion", TIPO_JOIN_REJECTED);
@@ -395,7 +379,7 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
     }
 
     // ============================================================
-    // ✅ MÉTODO LEGACY (compatibilidad token)
+    // ✅ LEGACY: aprobar solicitud + generar token
     // ============================================================
     @Override
     @Transactional
@@ -413,16 +397,15 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La solicitud no está en estado pendiente");
         }
 
-        Comunidad comunidad = solicitud.getComunidad();
-        Usuario usuario = solicitud.getUsuario();
-
         Usuario admin = usuarioDao.findById(adminId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Admin no encontrado"));
 
         solicitud.setAprobadoPor(admin);
         usuarioComunidadDao.save(solicitud);
 
-        ComunidadInvitacion inv = invitacionService.crearInvitacion1Uso(comunidad, usuario, admin, exp);
+        ComunidadInvitacion inv = invitacionService.crearInvitacion1Uso(
+                solicitud.getComunidad(), solicitud.getUsuario(), admin, exp
+        );
 
         Map<String, Object> out = new HashMap<>();
         out.put("success", true);

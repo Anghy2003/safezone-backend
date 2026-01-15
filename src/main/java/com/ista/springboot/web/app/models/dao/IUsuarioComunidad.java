@@ -26,7 +26,9 @@ public interface IUsuarioComunidad extends JpaRepository<UsuarioComunidad, Long>
 
     // === Roles ===
     boolean existsByRolIgnoreCase(String rol);
+
     Optional<UsuarioComunidad> findFirstByRolIgnoreCase(String rol);
+
     boolean existsByUsuarioIdAndRolIgnoreCase(Long usuarioId, String rol);
 
     boolean existsByUsuarioIdAndComunidadIdAndRolIgnoreCaseAndEstadoIgnoreCase(
@@ -40,5 +42,4 @@ public interface IUsuarioComunidad extends JpaRepository<UsuarioComunidad, Long>
     // === Mis comunidades activas ===
     @EntityGraph(attributePaths = {"comunidad"})
     List<UsuarioComunidad> findByUsuarioIdAndEstadoIgnoreCase(Long usuarioId, String estado);
-    UsuarioComunidad unirsePorCodigo(Long usuarioId, String codigoAcceso);
 }
