@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -21,6 +22,8 @@ import com.ista.springboot.web.app.dto.UsuarioDTO;
 import com.ista.springboot.web.app.models.entity.Usuario;
 import com.ista.springboot.web.app.models.entity.UsuarioComunidad;
 import com.ista.springboot.web.app.models.services.IUsuarioService;
+import com.ista.springboot.web.app.models.services.MailService;
+import com.ista.springboot.web.app.models.services.ResetTokenService;
 
 @CrossOrigin(origins = { "http://localhost:4200", "*" })
 @RestController
@@ -33,6 +36,17 @@ public class UsuarioRestController {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    // ✅ Password Reset (sin tablas nuevas)
+    @Autowired
+    private ResetTokenService resetTokenService;
+
+    @Autowired
+    private MailService mailService;
+
+    // Ej: https://tu-frontend.com/reset-password?token=
+    @Value("${app.reset.base-url}")
+    private String resetBaseUrl;
+
     // ===================== VALIDACIONES =====================
 
     // Email "razonable" (no garantiza que exista, solo formato).
@@ -40,7 +54,7 @@ public class UsuarioRestController {
             Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
 
     // Ecuador E.164:
-    //  - Móvil: +5939XXXXXXXX (9 + 8 = 9 dígitos después de 593? => total +593 + 9 dígitos)
+    //  - Móvil: +5939XXXXXXXX
     //  - Fijo:  +593[2-7]XXXXXXX
     private static final Pattern EC_PHONE_E164_RX =
             Pattern.compile("^\\+593(?:9\\d{8}|[2-7]\\d{7})$");
@@ -243,7 +257,7 @@ public class UsuarioRestController {
     }
 
     // ✅ GOOGLE LOGIN (Firebase) - protegido
-    // Solo autentica (correo real por token) y verifica si está registrado en Supabase.
+    // Solo autentica (correo real por token) y verifica si está registrado.
     // NO crea usuario.
     @PostMapping("/usuarios/google-login")
     public ResponseEntity<?> loginGoogle(Authentication auth) {
@@ -262,7 +276,7 @@ public class UsuarioRestController {
                     .body(Map.of(
                             "registered", false,
                             "email", email,
-                            "message", "Correo verificado con Google, pero falta registro legal en Supabase."
+                            "message", "Correo verificado con Google, pero falta registro legal."
                     ));
         }
 
@@ -283,6 +297,77 @@ public class UsuarioRestController {
                 "usuario", toDto(usuario)
         ));
     }
+
+    // ===================== ✅ OLVIDÉ MI CONTRASEÑA (NUEVO) =====================
+
+    // ✅ 1) Solicitar correo de recuperación (público)
+    @PostMapping("/usuarios/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> body) {
+        String email = normalizeEmail(body.get("email"));
+
+        if (email == null || email.isBlank() || !EMAIL_RX.matcher(email).matches()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "email inválido"));
+        }
+
+        // Respuesta ciega: NO revelar si existe o no
+        Usuario usuario = usuarioService.findByEmail(email);
+
+        if (usuario != null && Boolean.TRUE.equals(usuario.getActivo())) {
+            String token = resetTokenService.createResetToken(email);
+            String link = resetBaseUrl + token;
+
+            try {
+                mailService.sendResetLink(email, link);
+            } catch (Exception ex) {
+                // opcional: log interno
+            }
+        }
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Si el correo existe, se enviará un enlace para restablecer la contraseña."
+        ));
+    }
+
+    // ✅ 2) Cambiar contraseña con token (público)
+    @PostMapping("/usuarios/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> body) {
+        String token = body.get("token");
+        String newPassword = body.get("newPassword");
+
+        if (token == null || token.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "token es obligatorio"));
+        }
+        if (newPassword == null || newPassword.trim().length() < 6) {
+            return ResponseEntity.badRequest().body(Map.of("message", "password mínimo 6 caracteres"));
+        }
+
+        final String email;
+        try {
+            email = resetTokenService.validateAndGetEmail(token.trim());
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "Token inválido o expirado"));
+        }
+
+        Usuario usuario = usuarioService.findByEmail(email);
+        if (usuario == null) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "Token inválido o expirado"));
+        }
+
+        if (!Boolean.TRUE.equals(usuario.getActivo())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Usuario inactivo"));
+        }
+
+        usuario.setPasswordHash(passwordEncoder.encode(newPassword.trim()));
+        usuario.setUltimoAcceso(OffsetDateTime.now());
+        usuarioService.save(usuario);
+
+        return ResponseEntity.ok(Map.of("message", "Contraseña actualizada"));
+    }
+
+    // ===================== CRUD EXTRA =====================
 
     // Actualizar usuario - protegido
     @PutMapping("/usuarios/{id}")
@@ -397,6 +482,7 @@ public class UsuarioRestController {
         Usuario guardado = usuarioService.save(u);
         return toDto(guardado);
     }
+
     @GetMapping("/usuarios/me")
     public UsuarioDTO me(Authentication auth) {
         FirebasePrincipal p = requireFirebasePrincipal(auth);
@@ -404,7 +490,7 @@ public class UsuarioRestController {
         Usuario usuario = usuarioService.findByEmail(p.email());
         if (usuario == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                "No estás registrado en Supabase. Completa el registro legal.");
+                "No estás registrado. Completa el registro legal.");
         }
 
         usuario.setUltimoAcceso(OffsetDateTime.now());
@@ -412,5 +498,4 @@ public class UsuarioRestController {
 
         return toDto(usuario);
     }
-
 }

@@ -26,6 +26,7 @@ import com.ista.springboot.web.app.models.services.IIncidenteService;
 import com.ista.springboot.web.app.models.services.IRutaService;
 import com.ista.springboot.web.app.models.services.IUsuarioService;
 import com.ista.springboot.web.app.models.services.NotificacionPushService;
+import com.ista.springboot.web.app.models.services.RateLimitService; // ✅ NUEVO IMPORT
 
 @CrossOrigin(origins = { "http://localhost:4200", "http://10.0.2.2:4200", "*" })
 @RestController
@@ -37,8 +38,9 @@ public class IncidenteRestController {
     @Autowired private IComunidadService comunidadService;
     @Autowired private IRutaService rutaService;
     @Autowired private NotificacionPushService notificacionPushService;
-
     @Autowired private AlertaSmsService alertaSmsService;
+
+    @Autowired private RateLimitService rateLimitService; // ✅ NUEVO (usa lo que ya tienes)
 
     private static final GeometryFactory GEOMETRY_FACTORY =
             new GeometryFactory(new PrecisionModel(), 4326);
@@ -82,9 +84,29 @@ public class IncidenteRestController {
                 Incidente existente = incidenteService.findByClientGeneratedId(clientGeneratedId);
                 if (existente != null) {
                     // Ya existe: devolverlo sin reenviar notificaciones/SMS
+                    // ✅ Importante: no consume rate-limit
                     return ResponseEntity.ok(new IncidenteResponseDTO(existente));
                 }
             }
+
+            // =========================================================
+            // ✅ USUARIO (lo mantienes igual)
+            // =========================================================
+            Long usuarioId = extractUsuarioId(dto);
+            if (usuarioId == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "usuarioId es obligatorio");
+            }
+            Usuario usuario = usuarioService.findById(usuarioId);
+            if (usuario == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Usuario no encontrado");
+            }
+
+            // =========================================================
+            // ✅ RATE LIMIT (usa tu RateLimitService TAL CUAL)
+            // - Aquí sí cuenta porque ya sabemos que NO es duplicado
+            // - y que el usuario existe
+            // =========================================================
+            rateLimitService.checkAndConsumeOrThrow(usuarioId);
 
             // =========================================================
             // ✅ DIRECTO SIN IA: tipos que empiezan con SOS_ o DIRECTO_
@@ -100,8 +122,6 @@ public class IncidenteRestController {
                     throw new ResponseStatusException(
                             HttpStatus.UNPROCESSABLE_ENTITY,
                             "Reporte marcado para revisión (validación de seguridad)"
-
-
                     );
                 }
 
@@ -144,14 +164,6 @@ public class IncidenteRestController {
             }
 
             // ================= USUARIO =================
-            Long usuarioId = extractUsuarioId(dto);
-            if (usuarioId == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "usuarioId es obligatorio");
-            }
-            Usuario usuario = usuarioService.findById(usuarioId);
-            if (usuario == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Usuario no encontrado");
-            }
             incidente.setUsuario(usuario);
 
             // ================= COMUNIDAD =================
@@ -165,7 +177,6 @@ public class IncidenteRestController {
             }
 
             // ================= OFFLINE / SYNC (CASO A) =================
-            // (estos setters existen si aplicas el cambio en entidad/BD)
             incidente.setClientGeneratedId(clientGeneratedId);
             incidente.setCanalEnvio(safeTrim(dto.getCanalEnvio())); // ONLINE | OFFLINE_SMS | OFFLINE_QUEUE
             incidente.setSmsEnviadoPorCliente(Boolean.TRUE.equals(dto.getSmsEnviadoPorCliente()));
@@ -286,8 +297,8 @@ public class IncidenteRestController {
         double incLat = incidente.getUbicacion().getY();
         double incLng = incidente.getUbicacion().getX();
 
-        RouteResponseDTO dto = rutaService.route(usuarioLat, usuarioLng, incLat, incLng);
-        return ResponseEntity.ok(dto);
+        RouteResponseDTO dto2 = rutaService.route(usuarioLat, usuarioLng, incLat, incLng);
+        return ResponseEntity.ok(dto2);
     }
 
     // ===================== HELPERS =====================
