@@ -32,6 +32,7 @@ import com.ista.springboot.web.app.models.services.IUsuarioComunidadService;
 public class ComunidadRestController {
 
     private static final String SUPER_ADMIN_EMAIL = "safezonecomunity@gmail.com";
+    private static final String ESTADO_ACTIVO = "ACTIVO";
 
     @Autowired private IComunidadService comunidadService;
     @Autowired private IUsuarioComunidadService usuarioComunidadService;
@@ -141,7 +142,8 @@ public class ComunidadRestController {
             );
         }
 
-        long miembrosCount = usuarioComunidadDao.countByComunidadId(c.getId());
+        // ✅ SOLO contar miembros ACTIVOS (no pendientes)
+        long miembrosCount = usuarioComunidadDao.countByComunidadIdAndEstadoIgnoreCase(c.getId(), ESTADO_ACTIVO);
 
         return Map.of(
             "success", true,
@@ -201,7 +203,13 @@ public class ComunidadRestController {
     @PostMapping("/comunidades/{comunidadId}/solicitar-unirse/usuario/{usuarioId}")
     public Map<String, Object> solicitarUnirse(@PathVariable Long comunidadId, @PathVariable Long usuarioId) {
         UsuarioComunidad uc = usuarioComunidadService.solicitarUnirse(usuarioId, comunidadId);
-        return Map.of("success", true, "comunidadId", comunidadId, "usuarioId", usuarioId, "estado", uc.getEstado(), "rol", uc.getRol());
+        return Map.of(
+            "success", true,
+            "comunidadId", comunidadId,
+            "usuarioId", usuarioId,
+            "estado", uc.getEstado(),
+            "rol", uc.getRol()
+        );
     }
 
     @GetMapping("/comunidades/{comunidadId}/solicitudes/usuario/{adminId}")
@@ -213,7 +221,13 @@ public class ComunidadRestController {
     @PostMapping("/comunidades/{comunidadId}/solicitudes/{usuarioId}/aprobar/usuario/{adminId}")
     public Map<String, Object> aprobarSolicitud(@PathVariable Long comunidadId, @PathVariable Long usuarioId, @PathVariable Long adminId) {
         UsuarioComunidad uc = usuarioComunidadService.aprobarSolicitud(adminId, comunidadId, usuarioId);
-        return Map.of("success", true, "comunidadId", comunidadId, "usuarioId", usuarioId, "estado", uc.getEstado(), "rol", uc.getRol());
+        return Map.of(
+            "success", true,
+            "comunidadId", comunidadId,
+            "usuarioId", usuarioId,
+            "estado", uc.getEstado(),
+            "rol", uc.getRol()
+        );
     }
 
     @PostMapping("/comunidades/{comunidadId}/solicitudes/{usuarioId}/rechazar/usuario/{adminId}")
@@ -229,10 +243,18 @@ public class ComunidadRestController {
 
         return list.stream().map(uc -> {
             Comunidad c = uc.getComunidad();
+
             if (c == null || c.getId() == null) {
-                return Map.<String, Object>of("estado", uc.getEstado(), "rol", uc.getRol(), "comunidad", Map.of());
+                return Map.<String, Object>of(
+                    "estado", uc.getEstado(),
+                    "rol", uc.getRol(),
+                    "comunidad", Map.of()
+                );
             }
-            long miembrosCount = usuarioComunidadDao.countByComunidadId(c.getId());
+
+            // ✅ SOLO contar miembros ACTIVOS (no pendientes)
+            long miembrosCount = usuarioComunidadDao.countByComunidadIdAndEstadoIgnoreCase(c.getId(), ESTADO_ACTIVO);
+
             return Map.<String, Object>of(
                 "estado", uc.getEstado(),
                 "rol", uc.getRol(),

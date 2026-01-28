@@ -280,6 +280,12 @@ public class UsuarioRestController {
                     ));
         }
 
+        // ✅ FIX: si está suspendido/inactivo, NO permitir login (igual que login normal)
+        if (!Boolean.TRUE.equals(usuario.getActivo())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Usuario inactivo"));
+        }
+
         // Opcional: completar nombre/foto si están vacíos
         if ((usuario.getNombre() == null || usuario.getNombre().isBlank())
                 && p.name() != null && !p.name().isBlank()) {
@@ -442,6 +448,19 @@ public class UsuarioRestController {
         return toDto(guardado);
     }
 
+    // ✅ NUEVO: Activar / Reactivar usuario suspendido - protegido
+    @PutMapping("/usuarios/{id}/activar")
+    public UsuarioDTO activar(@PathVariable Long id) {
+        Usuario usuario = usuarioService.findById(id);
+        if (usuario == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Usuario no encontrado");
+        }
+        usuario.setActivo(true);
+        usuario.setUltimoAcceso(OffsetDateTime.now()); // opcional, coherencia con login
+        Usuario guardado = usuarioService.save(usuario);
+        return toDto(guardado);
+    }
+
     // Eliminar usuario - protegido
     @DeleteMapping("/usuarios/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -491,6 +510,10 @@ public class UsuarioRestController {
         if (usuario == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                 "No estás registrado. Completa el registro legal.");
+        }
+
+        if (!Boolean.TRUE.equals(usuario.getActivo())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Usuario inactivo");
         }
 
         usuario.setUltimoAcceso(OffsetDateTime.now());

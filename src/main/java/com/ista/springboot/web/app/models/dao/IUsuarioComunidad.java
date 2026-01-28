@@ -42,4 +42,10 @@ public interface IUsuarioComunidad extends JpaRepository<UsuarioComunidad, Long>
     // === Mis comunidades activas ===
     @EntityGraph(attributePaths = {"comunidad"})
     List<UsuarioComunidad> findByUsuarioIdAndEstadoIgnoreCase(Long usuarioId, String estado);
+    
+    long countByComunidadIdAndEstadoIgnoreCase(Long comunidadId, String estado);
+
+    long countByComunidadIdAndEstadoIgnoreCaseIn(Long comunidadId, List<String> estados);
+    // (opcional, por si luego quieres contar ACTIVO + PENDIENTE, etc.)
+
 }
