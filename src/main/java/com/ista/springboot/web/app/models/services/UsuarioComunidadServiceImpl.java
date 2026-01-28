@@ -30,6 +30,9 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
     public static final String ESTADO_PENDIENTE = "pendiente";
     public static final String ESTADO_EXPULSADO = "expulsado";
 
+    // ✅ NUEVO: rechazo (permite reintentar)
+    public static final String ESTADO_RECHAZADO = "rechazado";
+
     private static final String TIPO_JOIN_REQUEST  = "JOIN_REQUEST";
     private static final String TIPO_JOIN_APPROVED = "JOIN_APPROVED";
     private static final String TIPO_JOIN_REJECTED = "JOIN_REJECTED";
@@ -151,6 +154,7 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes unirte porque fuiste expulsado");
             }
 
+            // ✅ RECHAZADO también puede entrar directo si conoce el código
             existente.setEstado(ESTADO_ACTIVO);
             existente.setRol(ROL_USER);
             existente.setFechaUnion(OffsetDateTime.now());
@@ -207,17 +211,28 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
         UsuarioComunidad guardada;
 
         if (existente != null) {
+
             if (ESTADO_ACTIVO.equalsIgnoreCase(existente.getEstado())) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya perteneces a esta comunidad");
             }
+
             if (ESTADO_PENDIENTE.equalsIgnoreCase(existente.getEstado())) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya tienes una solicitud pendiente");
             }
+
+            // ✅ MINIMO: si está EXPULSADO (ban real) NO permitir reintento
+            if (ESTADO_EXPULSADO.equalsIgnoreCase(existente.getEstado())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes solicitar unirte porque fuiste expulsado");
+            }
+
+            // ✅ REINTENTO: si estaba RECHAZADO (o cualquier otro), vuelve a PENDIENTE
             existente.setEstado(ESTADO_PENDIENTE);
             existente.setRol(ROL_USER);
             existente.setAprobadoPor(null);
             guardada = usuarioComunidadDao.save(existente);
+
         } else {
+
             UsuarioComunidad uc = new UsuarioComunidad();
             uc.setUsuario(usuario);
             uc.setComunidad(comunidad);
@@ -330,7 +345,8 @@ public class UsuarioComunidadServiceImpl implements IUsuarioComunidadService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La solicitud no está en estado pendiente");
         }
 
-        solicitud.setEstado(ESTADO_EXPULSADO);
+        // ✅ CAMBIO MINIMO: rechazo != expulsado (para permitir reintento)
+        solicitud.setEstado(ESTADO_RECHAZADO);
         usuarioComunidadDao.save(solicitud);
 
         notificarUsuarioRechazado(solicitud);

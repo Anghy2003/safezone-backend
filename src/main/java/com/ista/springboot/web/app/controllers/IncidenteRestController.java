@@ -11,12 +11,16 @@ import org.locationtech.jts.geom.PrecisionModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.ista.springboot.web.app.dto.IncidenteDTO;
 import com.ista.springboot.web.app.dto.IncidenteResponseDTO;
+import com.ista.springboot.web.app.dto.MensajeComunidadCreateDTO;
+import com.ista.springboot.web.app.dto.MensajeComunidadDTO;
 import com.ista.springboot.web.app.dto.RouteResponseDTO;
+import com.ista.springboot.web.app.dto.UsuarioCercanoDTO;
 import com.ista.springboot.web.app.models.entity.Comunidad;
 import com.ista.springboot.web.app.models.entity.Incidente;
 import com.ista.springboot.web.app.models.entity.Usuario;
@@ -24,9 +28,10 @@ import com.ista.springboot.web.app.models.services.AlertaSmsService;
 import com.ista.springboot.web.app.models.services.IComunidadService;
 import com.ista.springboot.web.app.models.services.IIncidenteService;
 import com.ista.springboot.web.app.models.services.IRutaService;
+import com.ista.springboot.web.app.models.services.IUbicacionUsuarioService;
 import com.ista.springboot.web.app.models.services.IUsuarioService;
 import com.ista.springboot.web.app.models.services.NotificacionPushService;
-import com.ista.springboot.web.app.models.services.RateLimitService; // ✅ NUEVO IMPORT
+import com.ista.springboot.web.app.models.services.RateLimitService;
 
 @CrossOrigin(origins = { "http://localhost:4200", "http://10.0.2.2:4200", "*" })
 @RestController
@@ -39,8 +44,11 @@ public class IncidenteRestController {
     @Autowired private IRutaService rutaService;
     @Autowired private NotificacionPushService notificacionPushService;
     @Autowired private AlertaSmsService alertaSmsService;
-
-    @Autowired private RateLimitService rateLimitService; // ✅ NUEVO (usa lo que ya tienes)
+    @Autowired private RateLimitService rateLimitService;
+    
+    @Autowired private SimpMessagingTemplate messagingTemplate;
+    @Autowired private ChatWebSocketController chatController;
+    @Autowired private IUbicacionUsuarioService ubicacionUsuarioService;
 
     private static final GeometryFactory GEOMETRY_FACTORY =
             new GeometryFactory(new PrecisionModel(), 4326);
@@ -301,6 +309,80 @@ public class IncidenteRestController {
         return ResponseEntity.ok(dto2);
     }
 
+    // ===================== DUAL BROADCAST (NUEVO ENDPOINT) =====================
+    @PostMapping("/incidentes/broadcast-dual")
+    public ResponseEntity<String> broadcastDual(@RequestBody BroadcastDualRequest request) {
+        try {
+            // ===== 1) BROADCAST A LA COMUNIDAD =====
+            MensajeComunidadCreateDTO dtoComunidad = new MensajeComunidadCreateDTO();
+            dtoComunidad.setUsuarioId(request.getUsuarioId());
+            dtoComunidad.setComunidadId(request.getComunidadId());
+            dtoComunidad.setCanal(request.getCanal() != null ? request.getCanal() : "COMUNIDAD");
+            dtoComunidad.setTipo("incidente");
+            dtoComunidad.setMensaje(request.getDescripcion());
+            dtoComunidad.setImagenUrl(request.getImagenUrl());
+            dtoComunidad.setVideoUrl(request.getVideoUrl());
+            dtoComunidad.setAudioUrl(request.getAudioUrl());
+
+            MensajeComunidadDTO savedComunidad = chatController.manejarMensajeChat(
+                dtoComunidad, 
+                request.getCanal() != null ? request.getCanal() : "COMUNIDAD"
+            );
+
+            String topicComunidad = (request.getCanal() != null && request.getCanal().equalsIgnoreCase("VECINOS"))
+                ? "/topic/vecinos-" + request.getComunidadId()
+                : "/topic/comunidad-" + request.getComunidadId();
+
+            messagingTemplate.convertAndSend(topicComunidad, savedComunidad);
+
+            // ===== 2) BROADCAST A USUARIOS CERCANOS GPS =====
+            if (request.getLat() != null && request.getLng() != null) {
+                double safeRadio = (request.getRadio() != null) 
+                    ? Math.min(Math.max(request.getRadio(), 50.0), 5000.0) 
+                    : 2000.0;
+
+                List<UsuarioCercanoDTO> cercanos = ubicacionUsuarioService.findNearby(
+                    request.getLat(),
+                    request.getLng(),
+                    safeRadio,
+                    20,
+                    500
+                );
+
+                MensajeComunidadCreateDTO dtoNearby = new MensajeComunidadCreateDTO();
+                dtoNearby.setUsuarioId(request.getUsuarioId());
+                dtoNearby.setComunidadId(request.getComunidadId());
+                dtoNearby.setCanal("NEARBY");
+                dtoNearby.setTipo("incidente");
+                dtoNearby.setMensaje(request.getDescripcion());
+                dtoNearby.setImagenUrl(request.getImagenUrl());
+                dtoNearby.setVideoUrl(request.getVideoUrl());
+                dtoNearby.setAudioUrl(request.getAudioUrl());
+                dtoNearby.setLat(request.getLat());
+                dtoNearby.setLng(request.getLng());
+                dtoNearby.setRadio(safeRadio);
+
+                MensajeComunidadDTO savedNearby = chatController.manejarMensajeChat(dtoNearby, "NEARBY");
+
+                for (UsuarioCercanoDTO u : cercanos) {
+                    if (u == null || u.getId() == null) continue;
+                    Long receptorId = u.getId();
+                    if (receptorId.equals(request.getUsuarioId())) continue;
+
+                    messagingTemplate.convertAndSendToUser(
+                        receptorId.toString(),
+                        "/queue/nearby",
+                        savedNearby
+                    );
+                }
+            }
+
+            return ResponseEntity.ok("Broadcast dual completado");
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Error: " + e.getMessage());
+        }
+    }
+
     // ===================== HELPERS =====================
     private Long extractUsuarioId(IncidenteDTO dto) {
         if (dto.getUsuarioId() != null) return dto.getUsuarioId();
@@ -327,5 +409,49 @@ public class IncidenteRestController {
         if (s == null) return null;
         String t = s.trim();
         return t.isEmpty() ? null : t;
+    }
+
+    // ===== DTO REQUEST =====
+    public static class BroadcastDualRequest {
+        private Long usuarioId;
+        private Long comunidadId;
+        private String canal;
+        private String descripcion;
+        private String imagenUrl;
+        private String videoUrl;
+        private String audioUrl;
+        private Double lat;
+        private Double lng;
+        private Double radio;
+
+        public Long getUsuarioId() { return usuarioId; }
+        public void setUsuarioId(Long usuarioId) { this.usuarioId = usuarioId; }
+
+        public Long getComunidadId() { return comunidadId; }
+        public void setComunidadId(Long comunidadId) { this.comunidadId = comunidadId; }
+
+        public String getCanal() { return canal; }
+        public void setCanal(String canal) { this.canal = canal; }
+
+        public String getDescripcion() { return descripcion; }
+        public void setDescripcion(String descripcion) { this.descripcion = descripcion; }
+
+        public String getImagenUrl() { return imagenUrl; }
+        public void setImagenUrl(String imagenUrl) { this.imagenUrl = imagenUrl; }
+
+        public String getVideoUrl() { return videoUrl; }
+        public void setVideoUrl(String videoUrl) { this.videoUrl = videoUrl; }
+
+        public String getAudioUrl() { return audioUrl; }
+        public void setAudioUrl(String audioUrl) { this.audioUrl = audioUrl; }
+
+        public Double getLat() { return lat; }
+        public void setLat(Double lat) { this.lat = lat; }
+
+        public Double getLng() { return lng; }
+        public void setLng(Double lng) { this.lng = lng; }
+
+        public Double getRadio() { return radio; }
+        public void setRadio(Double radio) { this.radio = radio; }
     }
 }

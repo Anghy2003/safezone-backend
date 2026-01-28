@@ -3,13 +3,16 @@ package com.ista.springboot.web.app.dto;
 /**
  * DTO de entrada para enviar mensajes por WebSocket (y también por REST).
  * Incluye adjuntos y banderas de contenido sensible.
+ *
+ * ✅ Para NEARBY (GPS):
+ * - lat, lng, radio (opcionales; requeridos solo cuando canal=NEARBY o destino /chat/nearby)
  */
 public class MensajeComunidadCreateDTO {
 
     private Long comunidadId;
     private Long usuarioId;
 
-    private String canal; // COMUNIDAD | VECINOS
+    private String canal; // COMUNIDAD | VECINOS | NEARBY
     private String tipo;  // texto | imagen | video | audio | sistema | incidente
 
     private String mensaje;
@@ -20,20 +23,14 @@ public class MensajeComunidadCreateDTO {
 
     private Long replyToId;
 
-    // ===================== NUEVO: FILTRO SENSIBLE =====================
-    /**
-     * true si Flutter/IA marcó el contenido como sensible.
-     */
+    // ✅ GPS (para usuarios cercanos)
+    private Double lat;
+    private Double lng;
+    private Double radio; // metros (ej: 2000)
+
+    // ===================== FILTRO SENSIBLE =====================
     private Boolean contenidoSensible;
-
-    /**
-     * Motivo (opcional): "nudity", "violence", "blood", "unknown", etc.
-     */
     private String sensibilidadMotivo;
-
-    /**
-     * Score/confianza (opcional): 0.0 - 1.0
-     */
     private Double sensibilidadScore;
 
     public MensajeComunidadCreateDTO() {}
@@ -65,8 +62,17 @@ public class MensajeComunidadCreateDTO {
     public Long getReplyToId() { return replyToId; }
     public void setReplyToId(Long replyToId) { this.replyToId = replyToId; }
 
-    // ===================== GETTERS/SETTERS NUEVOS =====================
+    // ✅ GPS getters/setters
+    public Double getLat() { return lat; }
+    public void setLat(Double lat) { this.lat = lat; }
 
+    public Double getLng() { return lng; }
+    public void setLng(Double lng) { this.lng = lng; }
+
+    public Double getRadio() { return radio; }
+    public void setRadio(Double radio) { this.radio = radio; }
+
+    // Sensible
     public Boolean getContenidoSensible() { return contenidoSensible; }
     public void setContenidoSensible(Boolean contenidoSensible) { this.contenidoSensible = contenidoSensible; }
 
@@ -76,8 +82,6 @@ public class MensajeComunidadCreateDTO {
     public Double getSensibilidadScore() { return sensibilidadScore; }
     public void setSensibilidadScore(Double sensibilidadScore) { this.sensibilidadScore = sensibilidadScore; }
 
-    // ===================== (OPCIONAL) Helpers seguros =====================
-    // No afectan el JSON; ayudan a evitar nulls en el backend si algún día lo usas.
     public boolean isContenidoSensible() {
         return Boolean.TRUE.equals(contenidoSensible);
     }

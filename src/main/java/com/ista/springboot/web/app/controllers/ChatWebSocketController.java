@@ -12,6 +12,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.ista.springboot.web.app.dto.MensajeComunidadCreateDTO;
 import com.ista.springboot.web.app.dto.MensajeComunidadDTO;
+import com.ista.springboot.web.app.dto.UsuarioCercanoDTO;
 import com.ista.springboot.web.app.models.dao.IUsuarioComunidad;
 import com.ista.springboot.web.app.models.entity.Comunidad;
 import com.ista.springboot.web.app.models.entity.MensajeComunidad;
@@ -22,6 +23,7 @@ import com.ista.springboot.web.app.models.services.IComunidadService;
 import com.ista.springboot.web.app.models.services.IMensajeComunidadService;
 import com.ista.springboot.web.app.models.services.INotificacionService;
 import com.ista.springboot.web.app.models.services.IUsuarioService;
+import com.ista.springboot.web.app.models.services.IUbicacionUsuarioService;
 
 @Controller
 public class ChatWebSocketController {
@@ -44,22 +46,72 @@ public class ChatWebSocketController {
     @Autowired
     private INotificacionService notificacionService;
 
+    @Autowired
+    private IUbicacionUsuarioService ubicacionUsuarioService;
+
     private static final String ESTADO_ACTIVO = "activo";
 
+    // ===================== 1) COMUNIDAD =====================
     @MessageMapping("/chat/comunidad")
     public void enviarMensajeComunidad(MensajeComunidadCreateDTO dto) {
         MensajeComunidadDTO saved = manejarMensajeChat(dto, "COMUNIDAD");
         messagingTemplate.convertAndSend("/topic/comunidad-" + saved.getComunidadId(), saved);
     }
 
+    // ===================== 2) VECINOS (por comunidad) =====================
     @MessageMapping("/chat/vecinos")
     public void enviarMensajeVecinos(MensajeComunidadCreateDTO dto) {
         MensajeComunidadDTO saved = manejarMensajeChat(dto, "VECINOS");
         messagingTemplate.convertAndSend("/topic/vecinos-" + saved.getComunidadId(), saved);
     }
 
-    public MensajeComunidadDTO manejarMensajeChat(MensajeComunidadCreateDTO dto, String canalDefault) {
+    // ===================== 3) NEARBY (por GPS) =====================
+    @MessageMapping("/chat/nearby")
+    public void enviarMensajeNearby(MensajeComunidadCreateDTO dto) {
+        if (dto == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payload vacío");
+        }
+        if (dto.getUsuarioId() == null || dto.getComunidadId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "usuarioId y comunidadId son obligatorios");
+        }
+        if (dto.getLat() == null || dto.getLng() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Para NEARBY se requiere lat y lng");
+        }
 
+        // 1) Guardar mensaje
+        MensajeComunidadDTO saved = manejarMensajeChat(dto, "NEARBY");
+
+        // 2) Calcular radio
+        double radio = (dto.getRadio() != null) ? dto.getRadio() : 2000.0;
+        double safeRadio = Math.min(Math.max(radio, 50.0), 5000.0);
+
+        // 3) Buscar cercanos
+        List<UsuarioCercanoDTO> cercanos = ubicacionUsuarioService.findNearby(
+            dto.getLat(),
+            dto.getLng(),
+            safeRadio,
+            20,
+            500
+        );
+
+        final Long emisorId = dto.getUsuarioId();
+
+        // 4) Enviar 1 a 1 por /user/queue/nearby
+        for (UsuarioCercanoDTO u : cercanos) {
+            if (u == null || u.getId() == null) continue;
+            Long receptorId = u.getId();
+            if (emisorId != null && receptorId.equals(emisorId)) continue;
+
+            messagingTemplate.convertAndSendToUser(
+                receptorId.toString(),
+                "/queue/nearby",
+                saved
+            );
+        }
+    }
+
+    // ===================== CORE: GUARDAR MENSAJE =====================
+    public MensajeComunidadDTO manejarMensajeChat(MensajeComunidadCreateDTO dto, String canalDefault) {
         if (dto == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payload vacío");
         }
@@ -67,16 +119,16 @@ public class ChatWebSocketController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "usuarioId y comunidadId son obligatorios");
         }
 
-        final boolean tieneTexto  = dto.getMensaje() != null && !dto.getMensaje().trim().isEmpty();
+        final boolean tieneTexto = dto.getMensaje() != null && !dto.getMensaje().trim().isEmpty();
         final boolean tieneImagen = dto.getImagenUrl() != null && !dto.getImagenUrl().isBlank();
-        final boolean tieneVideo  = dto.getVideoUrl() != null && !dto.getVideoUrl().isBlank();
-        final boolean tieneAudio  = dto.getAudioUrl() != null && !dto.getAudioUrl().isBlank();
+        final boolean tieneVideo = dto.getVideoUrl() != null && !dto.getVideoUrl().isBlank();
+        final boolean tieneAudio = dto.getAudioUrl() != null && !dto.getAudioUrl().isBlank();
         final boolean tieneAdjunto = tieneImagen || tieneVideo || tieneAudio;
 
         if (!tieneTexto && !tieneAdjunto) {
             throw new ResponseStatusException(
                 HttpStatus.BAD_REQUEST,
-                "El mensaje debe tener texto o adjunto (imagen/video/audio)"
+                "El mensaje debe tener texto o adjunto"
             );
         }
 
@@ -90,16 +142,16 @@ public class ChatWebSocketController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Comunidad no encontrada");
         }
 
-        // ===================== CANAL =====================
+        // CANAL
         String canal = (dto.getCanal() != null && !dto.getCanal().isBlank())
                 ? dto.getCanal().trim().toUpperCase()
                 : canalDefault;
 
-        if (!"COMUNIDAD".equals(canal) && !"VECINOS".equals(canal)) {
+        if (!"COMUNIDAD".equals(canal) && !"VECINOS".equals(canal) && !"NEARBY".equals(canal)) {
             canal = canalDefault;
         }
 
-        // ===================== TIPO =====================
+        // TIPO
         String tipo = (dto.getTipo() != null && !dto.getTipo().isBlank())
                 ? dto.getTipo().trim().toLowerCase()
                 : "texto";
@@ -110,21 +162,25 @@ public class ChatWebSocketController {
             else if (tieneAudio) tipo = "audio";
         }
 
-        // ===================== FILTRO SENSIBLE (tu lógica) =====================
-        final boolean contenidoSensible = tieneAdjunto;
-        final String sensibilidadMotivo = contenidoSensible ? "Reporte / Incidente" : null;
-        final Double sensibilidadScore  = contenidoSensible ? 1.0 : null;
+        // FILTRO SENSIBLE
+        boolean contenidoSensible = tieneAdjunto;
+        String sensibilidadMotivo = contenidoSensible ? "Reporte / Incidente" : null;
+        Double sensibilidadScore = contenidoSensible ? 1.0 : null;
 
-        // ===================== ARMAR ENTITY =====================
+        if (dto.getContenidoSensible() != null) {
+            contenidoSensible = Boolean.TRUE.equals(dto.getContenidoSensible());
+            sensibilidadMotivo = dto.getSensibilidadMotivo();
+            sensibilidadScore = dto.getSensibilidadScore();
+        }
+
+        // ARMAR ENTITY
         MensajeComunidad m = new MensajeComunidad();
         m.setUsuario(usuario);
         m.setComunidad(comunidad);
-
         m.setMensaje(dto.getMensaje());
         m.setImagenUrl(dto.getImagenUrl());
         m.setVideoUrl(dto.getVideoUrl());
         m.setAudioUrl(dto.getAudioUrl());
-
         m.setCanal(canal);
         m.setTipo(tipo);
 
@@ -142,18 +198,19 @@ public class ChatWebSocketController {
         }
 
         m.setFechaEnvio(OffsetDateTime.now());
-
         m.setContenidoSensible(contenidoSensible);
         m.setSensibilidadMotivo(sensibilidadMotivo);
         m.setSensibilidadScore(sensibilidadScore);
 
         MensajeComunidad guardado = mensajeService.save(m);
 
-        // ✅ Crear notificaciones por usuario para puntito en Mis comunidades
-        try {
-            crearNotificacionesChat(usuario, comunidad, canal, tipo, tieneTexto, dto.getMensaje());
-        } catch (Exception ex) {
-            System.out.println("WARN no se pudo crear notificaciones chat: " + ex.getMessage());
+        // Notificaciones solo para miembros (COMUNIDAD/VECINOS)
+        if (!"NEARBY".equalsIgnoreCase(canal)) {
+            try {
+                crearNotificacionesChat(usuario, comunidad, canal, tipo, tieneTexto, dto.getMensaje());
+            } catch (Exception ex) {
+                System.out.println("WARN no se pudo crear notificaciones chat: " + ex.getMessage());
+            }
         }
 
         return new MensajeComunidadDTO(guardado);
@@ -172,31 +229,26 @@ public class ChatWebSocketController {
         List<UsuarioComunidad> miembrosActivos =
                 usuarioComunidadDao.findByComunidadIdAndEstadoIgnoreCase(comunidad.getId(), ESTADO_ACTIVO);
 
-        final String tipoNoti = "CHAT_" + canal; // CHAT_COMUNIDAD / CHAT_VECINOS
+        final String tipoNoti = "CHAT_" + canal;
         final String titulo = "Nuevo mensaje en " + (comunidad.getNombre() != null ? comunidad.getNombre() : "tu comunidad");
-
         final String cuerpo = tieneTexto
                 ? (texto != null ? texto.trim() : "Nuevo mensaje")
                 : ("Nuevo " + (tipo != null ? tipo : "mensaje"));
 
         for (UsuarioComunidad uc : miembrosActivos) {
             if (uc == null || uc.getUsuario() == null) continue;
-
             Usuario receptor = uc.getUsuario();
             if (receptor.getId() == null) continue;
-
             if (emisor != null && emisor.getId() != null && receptor.getId().equals(emisor.getId())) continue;
 
             Notificacion n = new Notificacion();
-            n.setUsuario(receptor); // ✅ receptor
+            n.setUsuario(receptor);
             n.setComunidad(comunidad);
             n.setTipoNotificacion(tipoNoti);
             n.setTitulo(titulo);
             n.setMensaje(cuerpo);
-
             n.setLeido(false);
             n.setFechaEnvio(OffsetDateTime.now());
-
             n.setTieneFoto("imagen".equalsIgnoreCase(tipo));
             n.setTieneVideo("video".equalsIgnoreCase(tipo));
             n.setTieneAudio("audio".equalsIgnoreCase(tipo));

@@ -1,3 +1,4 @@
+// src/main/java/com/ista/springboot/web/app/config/WebSocketConfig.java
 package com.ista.springboot.web.app.config;
 
 import org.springframework.context.annotation.Configuration;
@@ -7,17 +8,14 @@ import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
 /**
- * Configuración WebSocket con STOMP
+ * ✅ WebSocket con STOMP:
+ * - Broker: /topic y /queue
+ * - App prefix: /app
+ * - User prefix: /user
  *
- * Permite:
- * - Comunicación en tiempo real (chat)
- * - Topics por comunidad
- * - Compatibilidad SockJS
- *
- * Sugerencias de topics (no obligatorias):
- * - /topic/comunidad.{comunidadId}.chat
- * - /topic/comunidad.{comunidadId}.solicitudes   (admins)
- * - /user/queue/*                                (privados)
+ * ✅ Importante para "usuarios cercanos":
+ * Usaremos /user/queue/* para enviar mensajes a usuarios específicos (por userId).
+ * Para eso necesitamos Principal => lo resolvemos con UserIdHandshakeInterceptor + UserHandshakeHandler.
  */
 @Configuration
 @EnableWebSocketMessageBroker
@@ -26,21 +24,23 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
 
-        config.enableSimpleBroker(
-                "/topic",
-                "/queue"
-        );
+        config.enableSimpleBroker("/topic", "/queue");
 
         config.setApplicationDestinationPrefixes("/app");
 
-        // Opcional (si usas mensajes privados con /user/queue)
+        // ✅ Esto habilita /user/queue/*
         config.setUserDestinationPrefix("/user");
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*")
+                // ✅ 1) lee userId del querystring y lo guarda
+                .addInterceptors(new UserIdHandshakeInterceptor())
+                // ✅ 2) crea el Principal (name = userId)
+                .setHandshakeHandler(new UserHandshakeHandler())
                 .withSockJS();
     }
 }
