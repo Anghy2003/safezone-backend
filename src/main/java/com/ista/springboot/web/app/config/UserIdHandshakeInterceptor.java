@@ -1,4 +1,3 @@
-// src/main/java/com/ista/springboot/web/app/config/UserIdHandshakeInterceptor.java
 package com.ista.springboot.web.app.config;
 
 import java.net.URI;
@@ -38,12 +37,11 @@ public class UserIdHandshakeInterceptor implements HandshakeInterceptor {
             userId = request.getHeaders().getFirst("X-User-Id");
         }
 
-        if (userId == null || userId.trim().isEmpty()) {
-            // ❗ Sin userId no hay /user/queue routing
-            return false;
+        if (userId != null && !userId.trim().isEmpty()) {
+            attributes.put(ATTR_USER_ID, userId.trim());
         }
 
-        attributes.put(ATTR_USER_ID, userId.trim());
+        // ✅ IMPORTANTE: NO BLOQUEAR SockJS
         return true;
     }
 

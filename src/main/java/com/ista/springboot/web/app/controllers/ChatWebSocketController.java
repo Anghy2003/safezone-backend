@@ -22,8 +22,8 @@ import com.ista.springboot.web.app.models.entity.UsuarioComunidad;
 import com.ista.springboot.web.app.models.services.IComunidadService;
 import com.ista.springboot.web.app.models.services.IMensajeComunidadService;
 import com.ista.springboot.web.app.models.services.INotificacionService;
-import com.ista.springboot.web.app.models.services.IUsuarioService;
 import com.ista.springboot.web.app.models.services.IUbicacionUsuarioService;
+import com.ista.springboot.web.app.models.services.IUsuarioService;
 
 @Controller
 public class ChatWebSocketController {
@@ -65,7 +65,7 @@ public class ChatWebSocketController {
         messagingTemplate.convertAndSend("/topic/vecinos-" + saved.getComunidadId(), saved);
     }
 
-    // ===================== 3) NEARBY (por GPS) =====================
+    // ===================== 3) NEARBY (por GPS, privado por usuario) =====================
     @MessageMapping("/chat/nearby")
     public void enviarMensajeNearby(MensajeComunidadCreateDTO dto) {
         if (dto == null) {
@@ -81,7 +81,7 @@ public class ChatWebSocketController {
         // 1) Guardar mensaje
         MensajeComunidadDTO saved = manejarMensajeChat(dto, "NEARBY");
 
-        // 2) Calcular radio
+        // 2) Calcular radio seguro
         double radio = (dto.getRadio() != null) ? dto.getRadio() : 2000.0;
         double safeRadio = Math.min(Math.max(radio, 50.0), 5000.0);
 
@@ -126,10 +126,7 @@ public class ChatWebSocketController {
         final boolean tieneAdjunto = tieneImagen || tieneVideo || tieneAudio;
 
         if (!tieneTexto && !tieneAdjunto) {
-            throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST,
-                "El mensaje debe tener texto o adjunto"
-            );
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El mensaje debe tener texto o adjunto");
         }
 
         final Usuario usuario = usuarioService.findById(dto.getUsuarioId());
@@ -142,7 +139,7 @@ public class ChatWebSocketController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Comunidad no encontrada");
         }
 
-        // CANAL
+        // ===== CANAL =====
         String canal = (dto.getCanal() != null && !dto.getCanal().isBlank())
                 ? dto.getCanal().trim().toUpperCase()
                 : canalDefault;
@@ -151,10 +148,14 @@ public class ChatWebSocketController {
             canal = canalDefault;
         }
 
-        // TIPO
-        String tipo = (dto.getTipo() != null && !dto.getTipo().isBlank())
-                ? dto.getTipo().trim().toLowerCase()
-                : "texto";
+        // ===== TIPO =====
+        String tipo;
+        if (dto.getTipo() != null && !dto.getTipo().isBlank()) {
+            tipo = dto.getTipo().trim().toLowerCase();
+        } else {
+            // ✅ por defecto: NEARBY => incidente; otros => texto
+            tipo = "NEARBY".equalsIgnoreCase(canal) ? "incidente" : "texto";
+        }
 
         if (("texto".equals(tipo) || tipo.isBlank()) && !tieneTexto && tieneAdjunto) {
             if (tieneImagen) tipo = "imagen";
@@ -162,18 +163,21 @@ public class ChatWebSocketController {
             else if (tieneAudio) tipo = "audio";
         }
 
-        // FILTRO SENSIBLE
-        boolean contenidoSensible = tieneAdjunto;
-        String sensibilidadMotivo = contenidoSensible ? "Reporte / Incidente" : null;
-        Double sensibilidadScore = contenidoSensible ? 1.0 : null;
+        // ===== FILTRO SENSIBLE (mejora) =====
+        // ✅ NEARBY por defecto se marca sensible (incidente/reporte), incluso si es solo texto.
+        boolean contenidoSensibleBase = "NEARBY".equalsIgnoreCase(canal) || tieneAdjunto;
+        boolean contenidoSensible = contenidoSensibleBase;
+        String sensibilidadMotivo = contenidoSensibleBase ? "Reporte / Incidente" : null;
+        Double sensibilidadScore = contenidoSensibleBase ? 1.0 : null;
 
+        // override opcional desde DTO
         if (dto.getContenidoSensible() != null) {
             contenidoSensible = Boolean.TRUE.equals(dto.getContenidoSensible());
             sensibilidadMotivo = dto.getSensibilidadMotivo();
             sensibilidadScore = dto.getSensibilidadScore();
         }
 
-        // ARMAR ENTITY
+        // ===== ARMAR ENTITY =====
         MensajeComunidad m = new MensajeComunidad();
         m.setUsuario(usuario);
         m.setComunidad(comunidad);
@@ -204,7 +208,7 @@ public class ChatWebSocketController {
 
         MensajeComunidad guardado = mensajeService.save(m);
 
-        // Notificaciones solo para miembros (COMUNIDAD/VECINOS)
+        // ✅ Notificaciones solo para miembros (COMUNIDAD/VECINOS). NEARBY NO.
         if (!"NEARBY".equalsIgnoreCase(canal)) {
             try {
                 crearNotificacionesChat(usuario, comunidad, canal, tipo, tieneTexto, dto.getMensaje());

@@ -1,11 +1,10 @@
-// src/main/java/com/ista/springboot/web/app/config/UserHandshakeHandler.java
 package com.ista.springboot.web.app.config;
 
 import java.security.Principal;
 import java.util.Map;
+import java.util.UUID;
 
 import org.springframework.http.server.ServerHttpRequest;
-import org.springframework.lang.Nullable;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 
@@ -20,12 +19,12 @@ public class UserHandshakeHandler extends DefaultHandshakeHandler {
         Object raw = attributes.get(UserIdHandshakeInterceptor.ATTR_USER_ID);
         final String userId = (raw != null) ? raw.toString().trim() : null;
 
-        if (userId == null || userId.isEmpty()) {
-            // si no hay userId, caemos al comportamiento default (pero NO servirá para /user/queue)
-            return super.determineUser(request, wsHandler, attributes);
-        }
+        // ✅ Si NO hay userId, igual devuelve un Principal válido (SockJS estable)
+        final String principalName = (userId != null && !userId.isEmpty())
+                ? userId
+                : UUID.randomUUID().toString();
 
-        return new StompPrincipal(userId);
+        return new StompPrincipal(principalName);
     }
 
     private static final class StompPrincipal implements Principal {
